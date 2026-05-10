@@ -35,6 +35,9 @@ caddy_config/
 # Claude Code internal files
 .claude/
 
+# Personal learning notes — keep private
+docs/LEARNING.md
+
 # Internal HTML files (dev tools / design drafts / private docs)
 "Phase1 教學手冊.html"
 Phase1\ 教學手冊.html
