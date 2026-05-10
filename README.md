@@ -16,9 +16,13 @@ It pulls chip-concentration and volume data from four public sources every day, 
 
 ## Screenshots
 
-![Dashboard](docs/screenshots/Picture1.jpg)
+![Login](docs/screenshots/Picture1.jpg)
 
-> Filter bar: drag the sliders to adjust the volume and chip-concentration threshold in real time. Results update instantly without a page reload.  
+> JWT-based login with a demo mode — any password works for quick access during evaluation.
+
+![Dashboard](docs/screenshots/Picture2.jpg)
+
+> Filter bar: drag the sliders to adjust volume and chip-concentration thresholds in real time. Results update instantly without a page reload.  
 > Showing 325 out of 414 stocks — sorted by chip concentration (highest first).
 
 ---
