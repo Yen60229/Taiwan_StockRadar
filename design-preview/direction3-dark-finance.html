@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockRadar · 方向3 — 高對比暗金融風</title>
+<style>
+  /* ── Reset & Base ─────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:          #04080f;
+    --bg-card:     #060d1a;
+    --bg-row-alt:  rgba(0, 130, 255, 0.03);
+    --bg-hover:    rgba(0, 140, 255, 0.06);
+    --line:        rgba(0, 130, 255, 0.12);
+    --line-group:  rgba(0, 150, 255, 0.22);
+    --accent:      #00aaff;
+    --accent-cyan: #00d8ff;
+    --text:        #d4e4f4;
+    --text-mute:   #4a90c8;
+    --text-dim:    #2c4d6e;
+    --font-mono:   'Courier New', 'Consolas', monospace;
+    --font-sans:   -apple-system, 'Microsoft JhengHei', sans-serif;
+
+    /* 三個籌碼色 */
+    --conc-color:  #b04cff;
+    --for-color:   #00aaff;
+    --big-color:   #ff4da6;
+    --dir-color:   #ffcc00;
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    min-height: 100vh;
+    line-height: 1.4;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Header ──────────────────────────────────────── */
+  .header {
+    /* 頂部 2px 藍色漸層 accent line */
+    border-top: 2px solid transparent;
+    border-image: linear-gradient(90deg, #0044aa 0%, #00aaff 40%, #00d8ff 70%, #0044aa 100%) 1;
+    background: rgba(4, 8, 20, 0.95);
+    backdrop-filter: blur(20px);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    padding: 0 28px;
+    height: 58px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .logo-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .logo-icon {
+    width: 34px; height: 34px;
+    border-radius: 9px;
+    background: linear-gradient(135deg, #0050c8 0%, #00aaff 100%);
+    display: grid; place-items: center;
+    font-size: 17px;
+    box-shadow: 0 0 18px rgba(0, 170, 255, 0.4), inset 0 1px 0 rgba(255,255,255,.15);
+  }
+
+  .logo-text { line-height: 1.15; }
+  .logo-title { font-size: 15px; font-weight: 800; letter-spacing: .03em; color: #e8f4ff; }
+  .logo-sub   { font-size: 10.5px; color: #2c5580; letter-spacing: .1em; }
+
+  .header-search {
+    position: relative;
+    flex: 1;
+    max-width: 340px;
+    margin-left: 12px;
+  }
+  .header-search .icon {
+    position: absolute; left: 11px; top: 50%; transform: translateY(-50%);
+    color: var(--text-dim); font-size: 13px; pointer-events: none;
+  }
+  .header-search input {
+    width: 100%;
+    padding: 8px 12px 8px 30px;
+    background: rgba(0, 130, 255, 0.07);
+    border: 1px solid rgba(0, 130, 255, 0.2);
+    border-radius: 7px;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .header-search input:focus { border-color: rgba(0, 170, 255, 0.5); }
+  .header-search input::placeholder { color: var(--text-dim); }
+
+  .header-actions {
+    margin-left: auto;
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .btn {
+    padding: 6px 14px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: all .15s;
+  }
+  .btn-accent {
+    background: rgba(0, 170, 255, 0.15);
+    border: 1px solid rgba(0, 170, 255, 0.35);
+    color: #60c8ff;
+  }
+  .btn-accent:hover { background: rgba(0, 170, 255, 0.25); }
+
+  .btn-ghost {
+    background: rgba(255,255,255,.04);
+    border: 1px solid rgba(255,255,255,.1);
+    color: #4a6e90;
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,.07); color: var(--text); }
+
+  .header-user { font-size: 13px; color: #2c5580; }
+
+  /* ── Filter Bar ─────────────────────────────────── */
+  .filter-bar {
+    padding: 14px 28px;
+    background: rgba(0, 20, 50, 0.4);
+    border-bottom: 1px solid var(--line);
+    display: flex;
+    gap: 36px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .slider-group { display: flex; flex-direction: column; gap: 6px; }
+  .slider-label {
+    font-size: 10px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    font-weight: 700;
+  }
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  .slider-row input[type=range] {
+    width: 150px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .slider-val {
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-weight: 800;
+    font-size: 15px;
+    min-width: 72px;
+  }
+
+  .filter-check {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: #3a6080; cursor: pointer; user-select: none;
+  }
+  .filter-check input[type=checkbox] {
+    accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer;
+  }
+
+  .filter-count {
+    margin-left: auto;
+    display: flex; align-items: baseline; gap: 6px;
+  }
+  .count-label { font-size: 13px; color: #2c4d6e; }
+  .count-num {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 900;
+    color: var(--accent-cyan);
+    line-height: 1;
+    text-shadow: 0 0 20px rgba(0, 216, 255, 0.5);
+  }
+  .count-total { font-size: 13px; color: #2c4d6e; }
+
+  /* ── Main Table Container ────────────────────────── */
+  .main-wrap { padding: 20px 28px; }
+
+  .table-card {
+    background: var(--bg-card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: auto;
+    box-shadow:
+      0 0 0 1px rgba(0, 130, 255, 0.05),
+      0 8px 40px rgba(0, 0, 0, 0.6),
+      inset 0 1px 0 rgba(0, 130, 255, 0.08);
+  }
+
+  /* ── Table ───────────────────────────────────────── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    white-space: nowrap;
+  }
+
+  /* THEAD */
+  thead tr {
+    background: rgba(0, 100, 200, 0.07);
+    border-bottom: 1px solid rgba(0, 150, 255, 0.18);
+  }
+
+  th {
+    padding: 11px 16px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--text-mute);
+    text-align: right;
+    white-space: nowrap;
+    position: relative;
+  }
+  th:first-child, th.left { text-align: left; }
+
+  /* 欄位群組分隔線（行情組 & 籌碼組起始欄） */
+  th.group-start, td.group-start {
+    border-left: 2px solid var(--line-group);
+  }
+
+  /* th 下方細線 */
+  th::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 8px; right: 8px;
+    height: 1px;
+    background: rgba(0, 150, 255, 0.15);
+  }
+
+  /* TBODY rows */
+  tbody tr {
+    border-bottom: 1px solid rgba(0, 80, 160, 0.1);
+    transition: background .1s;
+    cursor: pointer;
+    position: relative;
+  }
+
+  /* 交替背景 */
+  tbody tr:nth-child(even) { background: var(--bg-row-alt); }
+
+  /* Hover 效果：左側 3px cyan accent line + 背景提亮 */
+  tbody tr:hover { background: var(--bg-hover); }
+  tbody tr:hover td:first-child {
+    border-left: 3px solid var(--accent-cyan);
+    padding-left: 13px; /* 補 1px 讓內容不位移 */
+  }
+
+  td {
+    padding: 10px 16px;
+    text-align: right;
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  td:first-child, td.left { text-align: left; }
+  td:first-child {
+    border-left: 3px solid transparent;
+    transition: border-color .1s;
+  }
+
+  /* ── Cell Styles ────────────────────────────────── */
+
+  /* 代號：cyan 大字打字機 */
+  .cell-code {
+    font-family: var(--font-mono);
+    color: var(--accent-cyan);
+    font-weight: 800;
+    font-size: 14.5px;
+    letter-spacing: .03em;
+  }
+
+  /* 名稱 */
+  .cell-name {
+    font-weight: 700;
+    font-size: 13.5px;
+    color: #d8eeff;
+  }
+
+  /* Market badge */
+  .badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    vertical-align: middle;
+    margin-left: 6px;
+  }
+  .badge-twse {
+    background: rgba(0, 130, 255, 0.18);
+    color: #5ab4ff;
+    border: 1px solid rgba(0, 130, 255, 0.38);
+  }
+  .badge-tpex {
+    background: rgba(0, 200, 130, 0.16);
+    color: #34d399;
+    border: 1px solid rgba(0, 200, 130, 0.35);
+  }
+
+  /* 產業 */
+  .cell-industry { font-size: 12px; color: #2c5580; }
+
+  /* 收盤 / 均量：純白粗字 */
+  .cell-price {
+    font-family: var(--font-mono);
+    font-size: 15px;
+    font-weight: 600;
+    color: #eaf4ff;
+  }
+  .cell-vol {
+    font-family: var(--font-mono);
+    font-size: 13.5px;
+    color: #8bb8d8;
+  }
+
+  /* 籌碼集中度：大字 + 進度條 */
+  .cell-conc {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 5px;
+  }
+  .conc-num {
+    font-family: var(--font-mono);
+    font-size: 16px;
+    font-weight: 900;
+    color: var(--conc-color);
+    text-shadow: 0 0 16px rgba(176, 76, 255, 0.5);
+  }
+  .conc-bar-wrap {
+    width: 62px; height: 6px;
+    border-radius: 4px;
+    background: rgba(176, 76, 255, 0.12);
+    overflow: hidden;
+  }
+  .conc-bar {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #7b00ff, #b04cff);
+    box-shadow: 0 0 6px rgba(176, 76, 255, 0.6);
+  }
+
+  /* 外資 / 大戶 / 董監 Pill */
+  .pill {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .pill-foreign {
+    color: var(--for-color);
+    background: rgba(0, 170, 255, 0.13);
+    border: 1px solid rgba(0, 170, 255, 0.4);
+    text-shadow: 0 0 10px rgba(0, 170, 255, 0.4);
+  }
+  .pill-big {
+    color: var(--big-color);
+    background: rgba(255, 77, 166, 0.10);
+    border: 1px solid rgba(255, 77, 166, 0.35);
+    text-shadow: 0 0 10px rgba(255, 77, 166, 0.35);
+  }
+  .pill-dir {
+    color: var(--dir-color);
+    background: rgba(255, 204, 0, 0.10);
+    border: 1px solid rgba(255, 204, 0, 0.35);
+    text-shadow: 0 0 10px rgba(255, 204, 0, 0.35);
+  }
+
+  /* 空值 */
+  .dash { color: #1a3050; font-size: 13px; }
+
+  /* 關注按鈕 */
+  .btn-watch {
+    background: none; border: none; cursor: pointer;
+    font-size: 20px;
+    color: #1a3050;
+    transition: color .15s, transform .15s;
+    padding: 2px 4px;
+  }
+  .btn-watch.active { color: #ffcc00; transform: scale(1.15); }
+  .btn-watch:hover:not(.active) { color: #3a6080; }
+
+  /* ── Scrollbar ───────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(0,130,255,.2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(0,130,255,.4); }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ─────────────────────────────────────────── -->
+<header class="header">
+  <div class="logo-wrap">
+    <div class="logo-icon">📡</div>
+    <div class="logo-text">
+      <div class="logo-title">StockRadar</div>
+      <div class="logo-sub">更新 2026-05-09</div>
+    </div>
+  </div>
+
+  <div class="header-search">
+    <span class="icon">🔍</span>
+    <input type="text" placeholder="搜尋代號或名稱…" />
+  </div>
+
+  <div class="header-actions">
+    <button class="btn btn-accent">📥 CSV</button>
+    <span class="header-user">👤 吉米</span>
+    <button class="btn btn-ghost">登出</button>
+  </div>
+</header>
+
+<!-- ── FILTER BAR ─────────────────────────────────────── -->
+<section class="filter-bar">
+  <div class="slider-group">
+    <div class="slider-label">日均量門檻</div>
+    <div class="slider-row">
+      <input type="range" min="500" max="10000" step="500" value="2000" />
+      <span class="slider-val">2,000張</span>
+    </div>
+  </div>
+
+  <div class="slider-group">
+    <div class="slider-label">籌碼集中度下限</div>
+    <div class="slider-row">
+      <input type="range" min="0" max="100" step="1" value="40" />
+      <span class="slider-val">40%</span>
+    </div>
+  </div>
+
+  <label class="filter-check">
+    <input type="checkbox" />
+    僅顯示三大法人買超
+  </label>
+
+  <div class="filter-count">
+    <span class="count-label">符合條件</span>
+    <span class="count-num">409</span>
+    <span class="count-total">/ 全部 409 檔</span>
+  </div>
+</section>
+
+<!-- ── TABLE ─────────────────────────────────────────── -->
+<main class="main-wrap">
+  <div class="table-card">
+    <table>
+      <thead>
+        <tr>
+          <th class="left"  style="width:72px">代號</th>
+          <th class="left"  style="width:165px">名稱</th>
+          <th class="left"  style="width:110px">產業</th>
+          <th class="group-start" style="width:90px">收盤<span style="font-size:9px;opacity:.55;margin-left:2px">元</span></th>
+          <th style="width:96px">均量<span style="font-size:9px;opacity:.55;margin-left:2px">張</span></th>
+          <th class="group-start" style="width:116px">籌碼集中度<span style="font-size:9px;opacity:.55;margin-left:2px">%</span></th>
+          <th style="width:100px">外資持股<span style="font-size:9px;opacity:.55;margin-left:2px">%</span></th>
+          <th style="width:100px">大戶籌碼<span style="font-size:9px;opacity:.55;margin-left:2px">%</span></th>
+          <th style="width:100px">董監持股<span style="font-size:9px;opacity:.55;margin-left:2px">%</span></th>
+          <th class="group-start" style="width:52px"></th>
+        </tr>
+      </thead>
+      <tbody id="tableBody">
+        <!-- JS 填充 -->
+      </tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  const data = [
+    { code:'6505', name:'台塑石化',   market:'TWSE', industry:'油電燃氣', close:'52.30',   vol:'16,435', conc:94.58, for:6.03,  big:88.55, dir:75.82, star:false },
+    { code:'4904', name:'遠傳電信',   market:'TWSE', industry:'通信網路', close:'95.40',   vol:'5,849',  conc:93.40, for:22.29, big:71.11, dir:29.74, star:true  },
+    { code:'3045', name:'台灣大哥大', market:'TWSE', industry:'通信網路', close:'110.00',  vol:'6,207',  conc:91.89, for:13.67, big:78.22, dir:6.03,  star:false },
+    { code:'9910', name:'豐泰企業',   market:'TWSE', industry:'觀光餐旅', close:'70.10',   vol:'3,182',  conc:90.03, for:9.40,  big:80.63, dir:16.56, star:false },
+    { code:'3532', name:'台塑勝高',   market:'TWSE', industry:'半導體',   close:'263.00',  vol:'16,975', conc:89.61, for:49.34, big:40.27, dir:74.63, star:false },
+    { code:'3036', name:'文曄科技',   market:'TWSE', industry:'電子通路', close:'219.00',  vol:'19,817', conc:89.37, for:23.77, big:65.60, dir:17.53, star:false },
+    { code:'3711', name:'日月光投控', market:'TWSE', industry:'半導體',   close:'540.00',  vol:'24,884', conc:88.37, for:78.66, big:9.71,  dir:15.38, star:true  },
+    { code:'2330', name:'台積電',     market:'TWSE', industry:'半導體',   close:'2,310.00',vol:'41,966', conc:88.32, for:70.67, big:17.65, dir:6.52,  star:false },
+    { code:'1216', name:'統一企業',   market:'TWSE', industry:'食品',     close:'69.40',   vol:'19,155', conc:88.20, for:32.03, big:56.17, dir:10.05, star:false },
+    { code:'2382', name:'廣達電腦',   market:'TWSE', industry:'電腦周邊', close:'344.00',  vol:'23,383', conc:85.93, for:26.27, big:59.66, dir:13.04, star:false },
+  ];
+
+  const tbody = document.getElementById('tableBody');
+
+  data.forEach((d, i) => {
+    const pct = Math.min(100, d.conc);
+    const isEven = i % 2 === 0;
+    const badge = d.market === 'TWSE'
+      ? '<span class="badge badge-twse">上市</span>'
+      : '<span class="badge badge-tpex">上櫃</span>';
+
+    tbody.innerHTML += `
+      <tr>
+        <td class="left">
+          <span class="cell-code">${d.code}</span>
+        </td>
+        <td class="left">
+          <span class="cell-name">${d.name}</span>${badge}
+        </td>
+        <td class="left">
+          <span class="cell-industry">${d.industry}</span>
+        </td>
+        <td class="group-start">
+          <span class="cell-price">${d.close}</span>
+        </td>
+        <td>
+          <span class="cell-vol">${d.vol}</span>
+        </td>
+        <td class="group-start">
+          <div class="cell-conc">
+            <span class="conc-num">${d.conc.toFixed(2)}%</span>
+            <div class="conc-bar-wrap">
+              <div class="conc-bar" style="width:${pct}%"></div>
+            </div>
+          </div>
+        </td>
+        <td>
+          <span class="pill pill-foreign">${d.for.toFixed(2)}%</span>
+        </td>
+        <td>
+          <span class="pill pill-big">${d.big.toFixed(2)}%</span>
+        </td>
+        <td>
+          <span class="pill pill-dir">${d.dir.toFixed(2)}%</span>
+        </td>
+        <td class="group-start" style="text-align:center">
+          <button class="btn-watch ${d.star ? 'active' : ''}"
+                  onclick="this.classList.toggle('active')"
+          >${d.star ? '★' : '☆'}</button>
+        </td>
+      </tr>
+    `;
+  });
+
+  // Slider live preview
+  document.querySelectorAll('input[type=range]').forEach(s => {
+    s.addEventListener('input', () => {
+      const v = +s.value;
+      const span = s.nextElementSibling;
+      if (s.max == 10000) span.textContent = v.toLocaleString() + '張';
+      else span.textContent = v + '%';
+    });
+  });
+
+  // Watchlist toggle ☆↔★
+  document.querySelectorAll('.btn-watch').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const isActive = btn.classList.contains('active');
+      btn.textContent = isActive ? '★' : '☆';
+    });
+  });
+</script>
+</body>
+</html>

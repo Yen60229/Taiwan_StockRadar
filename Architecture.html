@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>StockRadar · 系統架構設計文件</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg0:#050c18; --bg1:#0a1628; --bg2:#0f1e35; --bg3:#152540; --bg4:#1a2d4f;
+  --border:rgba(0,210,255,.12); --border2:rgba(0,210,255,.22);
+  --cyan:#00d2ff; --cyan2:#00a8d4; --cyan-dim:rgba(0,210,255,.12);
+  --green:#00e49a; --green-dim:rgba(0,228,154,.1);
+  --red:#ff4d6a; --gold:#ffd166; --purple:#a78bfa;
+  --orange:#fb923c;
+  --text0:#e8f4f8; --text1:#a8c8d8; --text2:#6a8fa0; --text3:#3d6070;
+  --r:10px; --rlg:16px;
+}
+html { scroll-behavior: smooth; }
+body { background:var(--bg0); color:var(--text0); font-family:'Space Grotesk',sans-serif; min-height:100vh; }
+::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:var(--bg1)} ::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+.mono { font-family:'JetBrains Mono',monospace; }
+
+/* ── TOPBAR ── */
+.topbar {
+  position:sticky; top:0; z-index:100;
+  display:flex; align-items:center; gap:1rem;
+  padding:0 2rem; height:52px;
+  background:rgba(5,12,24,.92); backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+}
+.logo { display:flex; align-items:center; gap:.6rem; }
+.logo-box { width:28px;height:28px;background:linear-gradient(135deg,var(--cyan),#0077cc);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:800;color:#000; }
+.logo h1 { font-size:.9rem; font-weight:700; letter-spacing:.06em; }
+.logo span { font-size:.65rem; color:var(--cyan); background:var(--cyan-dim); padding:2px 6px; border-radius:4px; }
+.topbar-nav { display:flex; gap:.25rem; margin-left:1rem; }
+.tnav { background:none; border:none; color:var(--text2); padding:.3rem .7rem; border-radius:6px; font-family:inherit; font-size:.78rem; font-weight:600; cursor:pointer; transition:all .2s; }
+.tnav:hover,.tnav.a { color:var(--cyan); background:var(--cyan-dim); }
+.topbar-sp { flex:1; }
+.badge { font-size:.7rem; padding:3px 8px; border-radius:20px; font-weight:700; letter-spacing:.04em; }
+.badge-draft { background:rgba(251,146,60,.15); color:var(--orange); border:1px solid rgba(251,146,60,.3); }
+
+/* ── LAYOUT ── */
+.wrap { max-width:1200px; margin:0 auto; padding:2rem; }
+.page-hero { text-align:center; padding:3rem 1rem 2.5rem; }
+.page-hero h2 { font-size:2rem; font-weight:700; letter-spacing:.04em; }
+.page-hero h2 span { color:var(--cyan); }
+.page-hero p { color:var(--text2); margin-top:.75rem; font-size:.92rem; max-width:560px; margin-inline:auto; line-height:1.7; }
+.meta-row { display:flex; align-items:center; justify-content:center; gap:1rem; margin-top:1.25rem; flex-wrap:wrap; }
+.meta-chip { font-size:.72rem; padding:4px 10px; border-radius:20px; border:1px solid var(--border2); color:var(--text1); background:var(--bg2); }
+
+/* sections */
+section { margin-bottom:3rem; }
+.sec-title { font-size:.7rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--text2); margin-bottom:1.25rem; display:flex; align-items:center; gap:.6rem; }
+.sec-title::after { content:''; flex:1; height:1px; background:var(--border); }
+.sec-h { font-size:1.2rem; font-weight:700; margin-bottom:.35rem; }
+
+/* ── TECH STACK CARDS ── */
+.stack-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:1rem; }
+.stack-card {
+  background:var(--bg2); border:1px solid var(--border);
+  border-radius:var(--rlg); padding:1.25rem;
+  transition:border-color .2s;
+}
+.stack-card:hover { border-color:var(--border2); }
+.sc-head { display:flex; align-items:center; gap:.75rem; margin-bottom:.85rem; }
+.sc-icon { width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;flex-shrink:0; }
+.sc-title { font-size:.88rem; font-weight:700; }
+.sc-sub { font-size:.72rem; color:var(--text2); margin-top:1px; }
+.sc-pkg { font-size:.75rem; color:var(--text1); margin-bottom:.4rem; font-family:'JetBrains Mono',monospace; }
+.sc-pkg b { color:var(--cyan); }
+.sc-reason { font-size:.76rem; color:var(--text2); line-height:1.6; }
+.sc-why { display:inline-block; font-size:.68rem; font-weight:700; letter-spacing:.05em; padding:2px 7px; border-radius:4px; margin-bottom:.5rem; }
+.why-perf { background:rgba(0,228,154,.12); color:var(--green); }
+.why-free { background:rgba(255,209,102,.12); color:var(--gold); }
+.why-simple { background:rgba(0,210,255,.12); color:var(--cyan); }
+.why-scale { background:rgba(167,139,250,.12); color:var(--purple); }
+
+/* ── ARCH DIAGRAM ── */
+.arch-wrap { background:var(--bg1); border:1px solid var(--border); border-radius:var(--rlg); padding:2rem; overflow-x:auto; }
+.arch-diagram { min-width:700px; }
+
+/* ── API TABLE ── */
+.api-table { width:100%; border-collapse:collapse; }
+.api-table th { font-size:.68rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text2); padding:.6rem 1rem; border-bottom:1px solid var(--border2); text-align:left; }
+.api-table td { padding:.65rem 1rem; font-size:.8rem; border-bottom:1px solid rgba(255,255,255,.04); vertical-align:top; }
+.api-table tr:hover td { background:rgba(0,210,255,.03); }
+.method { display:inline-block; font-size:.65rem; font-weight:700; padding:2px 6px; border-radius:4px; font-family:'JetBrains Mono',monospace; margin-right:.4rem; }
+.get { background:rgba(0,228,154,.15); color:var(--green); }
+.post { background:rgba(255,209,102,.15); color:var(--gold); }
+.url { font-family:'JetBrains Mono',monospace; font-size:.73rem; color:var(--cyan); word-break:break-all; }
+.api-note { font-size:.7rem; color:var(--text2); margin-top:.2rem; }
+.freq-chip { font-size:.65rem; padding:2px 6px; border-radius:4px; font-weight:700; }
+.freq-d { background:rgba(0,210,255,.12); color:var(--cyan); }
+.freq-w { background:rgba(167,139,250,.12); color:var(--purple); }
+.freq-s { background:rgba(0,228,154,.12); color:var(--green); }
+
+/* ── DB SCHEMA ── */
+.schema-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:1.25rem; }
+.schema-table { background:var(--bg2); border:1px solid var(--border); border-radius:var(--rlg); overflow:hidden; }
+.schema-head { padding:.75rem 1.1rem; background:var(--bg3); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:.5rem; }
+.schema-head .tname { font-size:.82rem; font-weight:700; font-family:'JetBrains Mono',monospace; color:var(--cyan); }
+.schema-head .tcomment { font-size:.72rem; color:var(--text2); }
+.schema-body { }
+.srow { display:flex; align-items:baseline; gap:.6rem; padding:.45rem 1.1rem; border-bottom:1px solid rgba(255,255,255,.04); font-size:.76rem; }
+.srow:last-child { border:none; }
+.srow .col { font-family:'JetBrains Mono',monospace; color:var(--text0); min-width:150px; }
+.srow .type { font-family:'JetBrains Mono',monospace; color:var(--gold); font-size:.7rem; min-width:90px; }
+.srow .constraint { font-size:.65rem; font-weight:700; padding:1px 5px; border-radius:3px; flex-shrink:0; }
+.pk { background:rgba(0,210,255,.15); color:var(--cyan); }
+.fk { background:rgba(167,139,250,.15); color:var(--purple); }
+.idx { background:rgba(0,228,154,.12); color:var(--green); }
+.srow .desc { font-size:.7rem; color:var(--text2); flex:1; }
+
+/* ── FLOW ── */
+.flow-steps { display:flex; flex-direction:column; gap:.75rem; }
+.flow-step {
+  display:flex; align-items:flex-start; gap:1rem;
+  background:var(--bg2); border:1px solid var(--border);
+  border-radius:var(--r); padding:1rem 1.25rem;
+}
+.step-num { width:28px;height:28px;border-radius:50%;background:var(--cyan-dim);border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;color:var(--cyan);flex-shrink:0; }
+.step-body { flex:1; }
+.step-title { font-size:.85rem; font-weight:700; margin-bottom:.25rem; }
+.step-desc { font-size:.76rem; color:var(--text2); line-height:1.65; }
+.step-code {
+  margin-top:.6rem; background:var(--bg3); border:1px solid var(--border);
+  border-radius:7px; padding:.65rem .9rem;
+  font-family:'JetBrains Mono',monospace; font-size:.72rem; color:var(--text1);
+  white-space:pre; overflow-x:auto; line-height:1.7;
+}
+.step-code .kw { color:var(--cyan); }
+.step-code .str { color:var(--green); }
+.step-code .cm { color:var(--text3); }
+.step-code .fn { color:var(--gold); }
+
+/* ── EMAIL TEMPLATE PREVIEW ── */
+.email-preview {
+  background:#ffffff; border-radius:var(--rlg); padding:2rem;
+  max-width:580px; margin:0 auto;
+  box-shadow:0 0 60px rgba(0,0,0,.6);
+  font-family:'Space Grotesk',sans-serif;
+}
+.ep-header { background:#0a1628; border-radius:10px; padding:1.25rem 1.5rem; margin-bottom:1.5rem; }
+.ep-header h2 { color:#00d2ff; font-size:1.1rem; font-weight:700; }
+.ep-header p { color:#6a8fa0; font-size:.75rem; margin-top:.25rem; }
+.ep-body h3 { font-size:.85rem; font-weight:700; color:#0a1628; margin-bottom:.75rem; }
+.ep-stock-table { width:100%; border-collapse:collapse; font-size:.78rem; }
+.ep-stock-table th { background:#f0f6f8; padding:.5rem .75rem; text-align:left; font-weight:700; color:#3d6070; font-size:.68rem; letter-spacing:.06em; text-transform:uppercase; }
+.ep-stock-table td { padding:.5rem .75rem; border-bottom:1px solid #e8f0f4; color:#152540; }
+.ep-stock-table tr:last-child td { border:none; }
+.ep-code { font-family:'JetBrains Mono',monospace; font-weight:700; color:#0077cc; }
+.ep-conc { font-family:'JetBrains Mono',monospace; font-weight:700; color:#00a8d4; }
+.ep-footer { margin-top:1.5rem; padding-top:1rem; border-top:1px solid #e8f0f4; font-size:.7rem; color:#8aaa b8; }
+
+/* ── TIMELINE ── */
+.timeline { display:flex; gap:0; }
+.tl-item { flex:1; position:relative; padding-top:2.5rem; text-align:center; }
+.tl-item::before {
+  content:''; position:absolute; top:11px; left:0; right:50%;
+  height:2px; background:var(--border2);
+}
+.tl-item:first-child::before { display:none; }
+.tl-item::after {
+  content:''; position:absolute; top:11px; left:50%; right:0;
+  height:2px; background:var(--border2);
+}
+.tl-item:last-child::after { display:none; }
+.tl-dot { position:absolute; top:4px; left:50%; transform:translateX(-50%); width:18px;height:18px;border-radius:50%;border:2px solid var(--cyan);background:var(--bg0);display:flex;align-items:center;justify-content:center; }
+.tl-dot.done { background:var(--cyan); }
+.tl-label { font-size:.72rem; font-weight:700; color:var(--text1); margin-bottom:.25rem; }
+.tl-sub { font-size:.66rem; color:var(--text2); }
+
+/* tabs */
+.tabs { display:flex; gap:.35rem; margin-bottom:1.25rem; }
+.tab { padding:.4rem .9rem; border-radius:8px; border:1px solid var(--border); background:none; color:var(--text2); font-family:inherit; font-size:.78rem; font-weight:600; cursor:pointer; transition:all .2s; }
+.tab.a { background:var(--cyan-dim); border-color:var(--border2); color:var(--cyan); }
+
+@media(max-width:768px) {
+  .wrap { padding:1rem; }
+  .stack-grid { grid-template-columns:1fr; }
+  .schema-grid { grid-template-columns:1fr; }
+  .timeline { flex-direction:column; gap:1rem; }
+  .tl-item { text-align:left; padding-top:0; padding-left:2.5rem; }
+  .tl-item::before,.tl-item::after { display:none; }
+  .tl-dot { top:0; left:0; transform:none; }
+}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div class="logo">
+    <div class="logo-box">SR</div>
+    <h1>StockRadar</h1>
+    <span>SYSTEM DESIGN</span>
+  </div>
+  <nav class="topbar-nav">
+    <button class="tnav a" onclick="scrollTo('stack')">技術選型</button>
+    <button class="tnav" onclick="scrollTo('arch')">系統架構</button>
+    <button class="tnav" onclick="scrollTo('api')">API 端點</button>
+    <button class="tnav" onclick="scrollTo('db')">資料庫</button>
+    <button class="tnav" onclick="scrollTo('scheduler')">排程流程</button>
+    <button class="tnav" onclick="scrollTo('claude-code')" style="color:var(--purple)">Claude Code</button>
+    <button class="tnav" onclick="scrollTo('email')">Email 通知</button>
+  </nav>
+  <div class="topbar-sp"></div>
+  <span class="badge badge-draft">架構草稿 v1.0</span>
+</div>
+
+<div class="page-hero">
+  <h2>StockRadar <span>系統架構設計</span></h2>
+  <p>台灣上市櫃股票篩選平台 — 從資料抓取、清洗、儲存到篩選呈現的完整後端架構規劃</p>
+  <div class="meta-row">
+    <span class="meta-chip">📅 2026/04/26</span>
+    <span class="meta-chip">🗃️ TWSE + TPEX + 集保</span>
+    <span class="meta-chip">🐍 Python FastAPI</span>
+    <span class="meta-chip">🐘 PostgreSQL</span>
+    <span class="meta-chip">🤖 Claude Code</span>
+    <span class="meta-chip">🚂 Railway</span>
+  </div>
+</div>
+
+<div class="wrap">
+
+  <!-- TECH STACK -->
+  <section id="stack">
+    <div class="sec-title">01 · 技術選型</div>
+    <div class="stack-grid">
+
+      <div class="stack-card">
+        <div class="sc-head">
+          <div class="sc-icon" style="background:rgba(255,209,102,.12)">🐍</div>
+          <div>
+            <div class="sc-title">後端 API</div>
+            <div class="sc-sub">Python 3.12 + FastAPI</div>
+          </div>
+        </div>
+        <div class="sc-why why-perf">效能優先</div>
+        <div class="sc-pkg"><b>fastapi</b> · <b>uvicorn</b> · <b>pydantic</b> · <b>sqlalchemy</b></div>
+        <div class="sc-reason">台股資料處理大量用到 pandas / numpy，Python 生態最完整。FastAPI 自動產生 OpenAPI 文件，非同步架構適合爬蟲 + API 並行。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="sc-head">
+          <div class="sc-icon" style="background:rgba(0,210,255,.12)">🕷️</div>
+          <div>
+            <div class="sc-title">爬蟲層</div>
+            <div class="sc-sub">httpx + BeautifulSoup4 + Playwright</div>
+          </div>
+        </div>
+        <div class="sc-why why-free">全免費</div>
+        <div class="sc-pkg"><b>httpx</b> · <b>bs4</b> · <b>playwright</b> · <b>pandas</b></div>
+        <div class="sc-reason">TWSE/TPEX 用 httpx 直打 JSON API。集保結算所需要 POST 表單 + 解析 HTML table，用 BeautifulSoup。若遇 JS 渲染則用 Playwright headless。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="sc-head">
+          <div class="sc-icon" style="background:rgba(0,228,154,.12)">🐘</div>
+          <div>
+            <div class="sc-title">資料庫</div>
+            <div class="sc-sub">PostgreSQL 16</div>
+          </div>
+        </div>
+        <div class="sc-why why-scale">長期擴展</div>
+        <div class="sc-pkg"><b>asyncpg</b> · <b>alembic</b> · <b>TimescaleDB</b> 可選</div>
+        <div class="sc-reason">股票時序資料天生適合 RDBMS。PostgreSQL 支援 JSONB（彈性存 API 原始回應）、Window Function（計算均量）、Partial Index（篩選加速）。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="sc-head">
+          <div class="sc-icon" style="background:rgba(167,139,250,.12)">⏰</div>
+          <div>
+            <div class="sc-title">排程系統</div>
+            <div class="sc-sub">Claude Code + VPS Cron</div>
+          </div>
+        </div>
+        <div class="sc-why why-perf">自主修錯</div>
+        <div class="sc-pkg"><b>claude</b> CLI · <b>VPS crontab</b> · <b>ANTHROPIC_API_KEY</b></div>
+        <div class="sc-reason">VPS crontab 週六/日 08:00 觸發 <code style="color:var(--cyan)">claude -p "執行台股週報任務"</code>。Claude Code 自主執行爬蟲、判斷錯誤並重試、產出報告、寄信，遇到網站結構變動可自行修正程式。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="sc-head">
+          <div class="sc-icon" style="background:rgba(251,146,60,.12)">🚂</div>
+          <div>
+            <div class="sc-title">部署 / 託管</div>
+            <div class="sc-sub">Railway</div>
+          </div>
+        </div>
+        <div class="sc-why why-simple">最簡單</div>
+        <div class="sc-pkg"><b>railway.toml</b> · <b>Dockerfile</b></div>
+        <div class="sc-reason">一鍵部署 FastAPI + PostgreSQL，內建環境變數管理、自動 HTTPS、免費額度約 $5/月。對個人/小團隊台股工具而言 CP 值最高。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="sc-head">
+          <div class="sc-icon" style="background:rgba(255,77,106,.12)">📧</div>
+          <div>
+            <div class="sc-title">Email 通知</div>
+            <div class="sc-sub">Resend.com API</div>
+          </div>
+        </div>
+        <div class="sc-why why-free">每月 3000 封免費</div>
+        <div class="sc-pkg"><b>resend</b> · <b>jinja2</b> (HTML 模板)</div>
+        <div class="sc-reason">比 SendGrid 設定更簡單，API 直覺，支援 HTML 郵件模板。週六週日各寄一封篩選結果通知，每月用量遠低於免費額度。</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ARCH DIAGRAM -->
+  <section id="arch">
+    <div class="sec-title">02 · 系統架構圖</div>
+    <div class="arch-wrap">
+      <svg class="arch-diagram" viewBox="0 0 900 520" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto">
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#00d2ff" opacity=".7"/>
+          </marker>
+          <marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="#6a8fa0" opacity=".5"/>
+          </marker>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- Data Sources Row -->
+        <text x="450" y="24" text-anchor="middle" fill="#6a8fa0" font-size="10" font-family="Space Grotesk" font-weight="700" letter-spacing="2">DATA SOURCES</text>
+
+        <!-- TWSE box -->
+        <rect x="20" y="35" width="140" height="64" rx="10" fill="#0f1e35" stroke="rgba(0,210,255,.25)" stroke-width="1"/>
+        <text x="90" y="56" text-anchor="middle" fill="#00d2ff" font-size="11" font-family="Space Grotesk" font-weight="700">TWSE</text>
+        <text x="90" y="70" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">openapi.twse.com.tw</text>
+        <text x="90" y="83" text-anchor="middle" fill="#a8c8d8" font-size="9" font-family="Space Grotesk">上市股票 日行情 法人</text>
+
+        <!-- TPEX box -->
+        <rect x="175" y="35" width="140" height="64" rx="10" fill="#0f1e35" stroke="rgba(0,210,255,.25)" stroke-width="1"/>
+        <text x="245" y="56" text-anchor="middle" fill="#00d2ff" font-size="11" font-family="Space Grotesk" font-weight="700">TPEX</text>
+        <text x="245" y="70" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">tpex.org.tw/openapi</text>
+        <text x="245" y="83" text-anchor="middle" fill="#a8c8d8" font-size="9" font-family="Space Grotesk">上櫃股票 日行情 法人</text>
+
+        <!-- TDCC box -->
+        <rect x="330" y="35" width="140" height="64" rx="10" fill="#0f1e35" stroke="rgba(167,139,250,.25)" stroke-width="1"/>
+        <text x="400" y="56" text-anchor="middle" fill="#a78bfa" font-size="11" font-family="Space Grotesk" font-weight="700">集保結算所</text>
+        <text x="400" y="70" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">tdcc.com.tw</text>
+        <text x="400" y="83" text-anchor="middle" fill="#a8c8d8" font-size="9" font-family="Space Grotesk">400張以上持股比例</text>
+
+        <!-- Claude Code box -->
+        <rect x="590" y="35" width="140" height="64" rx="10" fill="#0f1e35" stroke="rgba(167,139,250,.4)" stroke-width="1"/>
+        <text x="660" y="52" text-anchor="middle" fill="#a78bfa" font-size="11" font-family="Space Grotesk" font-weight="700">Claude Code</text>
+        <text x="660" y="66" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">VPS cron Sat &amp; Sun 08:00</text>
+        <text x="660" y="79" text-anchor="middle" fill="#a8c8d8" font-size="9" font-family="Space Grotesk">自主執行 · 自動修錯 · 寄信</text>
+
+        <!-- Arrows from sources down to scraper -->
+        <line x1="90" y1="99" x2="90" y2="185" stroke="#00d2ff" stroke-width="1.5" stroke-dasharray="4,3" opacity=".5" marker-end="url(#arr)"/>
+        <line x1="245" y1="99" x2="245" y2="185" stroke="#00d2ff" stroke-width="1.5" stroke-dasharray="4,3" opacity=".5" marker-end="url(#arr)"/>
+        <line x1="400" y1="99" x2="400" y2="185" stroke="#a78bfa" stroke-width="1.5" stroke-dasharray="4,3" opacity=".5" marker-end="url(#arr)"/>
+        <line x1="660" y1="99" x2="580" y2="185" stroke="#fb923c" stroke-width="1.5" stroke-dasharray="4,3" opacity=".5" marker-end="url(#arr)"/>
+
+        <!-- Scraper layer label -->
+        <text x="450" y="145" text-anchor="middle" fill="#6a8fa0" font-size="10" font-family="Space Grotesk" font-weight="700" letter-spacing="2">SCRAPER LAYER (Python)</text>
+
+        <!-- Scraper box -->
+        <rect x="20" y="155" width="620" height="72" rx="12" fill="#0a1628" stroke="rgba(0,210,255,.2)" stroke-width="1.5"/>
+        <text x="80" y="178" fill="#00d2ff" font-size="10" font-family="JetBrains Mono">twse_scraper.py</text>
+        <text x="80" y="194" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">GET JSON → pandas DataFrame</text>
+        <text x="80" y="209" fill="#3d6070" font-size="9" font-family="Space Grotesk">日均量計算 / 漲跌整理</text>
+        <line x1="230" y1="162" x2="230" y2="220" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+        <text x="280" y="178" fill="#a78bfa" font-size="10" font-family="JetBrains Mono">tdcc_scraper.py</text>
+        <text x="280" y="194" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">POST form → parse HTML table</text>
+        <text x="280" y="209" fill="#3d6070" font-size="9" font-family="Space Grotesk">400張以上持股人數 / 比例計算</text>
+        <line x1="455" y1="162" x2="455" y2="220" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+        <text x="475" y="178" fill="#ffd166" font-size="10" font-family="JetBrains Mono">data_pipeline.py</text>
+        <text x="475" y="194" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">merge / clean / validate</text>
+        <text x="475" y="209" fill="#3d6070" font-size="9" font-family="Space Grotesk">對齊股票代號 / 補缺值</text>
+
+        <!-- Arrow scraper → DB -->
+        <line x1="330" y1="227" x2="330" y2="285" stroke="#00d2ff" stroke-width="1.5" stroke-dasharray="4,3" opacity=".5" marker-end="url(#arr)"/>
+
+        <!-- DB label -->
+        <text x="450" y="262" text-anchor="middle" fill="#6a8fa0" font-size="10" font-family="Space Grotesk" font-weight="700" letter-spacing="2">STORAGE</text>
+
+        <!-- PostgreSQL -->
+        <rect x="20" y="272" width="200" height="68" rx="12" fill="#0f1e35" stroke="rgba(0,228,154,.25)" stroke-width="1.5"/>
+        <text x="120" y="294" text-anchor="middle" fill="#00e49a" font-size="11" font-family="Space Grotesk" font-weight="700">PostgreSQL</text>
+        <text x="120" y="309" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">stocks / daily_quotes</text>
+        <text x="120" y="323" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">chip_data / users / watchlist</text>
+
+        <!-- Redis -->
+        <rect x="235" y="272" width="170" height="68" rx="12" fill="#0f1e35" stroke="rgba(255,77,106,.2)" stroke-width="1"/>
+        <text x="320" y="294" text-anchor="middle" fill="#ff4d6a" font-size="11" font-family="Space Grotesk" font-weight="700">Redis (選配)</text>
+        <text x="320" y="309" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">篩選結果快取</text>
+        <text x="320" y="323" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">TTL: 3600s</text>
+
+        <!-- Arrows DB → API -->
+        <line x1="120" y1="340" x2="120" y2="390" stroke="#00e49a" stroke-width="1.5" stroke-dasharray="4,3" opacity=".5" marker-end="url(#arr)"/>
+        <line x1="320" y1="340" x2="320" y2="390" stroke="#ff4d6a" stroke-width="1.5" stroke-dasharray="4,3" opacity=".5" marker-end="url(#arr)"/>
+
+        <!-- API label -->
+        <text x="450" y="370" text-anchor="middle" fill="#6a8fa0" font-size="10" font-family="Space Grotesk" font-weight="700" letter-spacing="2">API LAYER (FastAPI)</text>
+
+        <!-- FastAPI box -->
+        <rect x="20" y="380" width="620" height="60" rx="12" fill="#0a1628" stroke="rgba(255,209,102,.2)" stroke-width="1.5"/>
+        <text x="120" y="404" fill="#ffd166" font-size="10" font-family="JetBrains Mono">GET /api/screen</text>
+        <text x="120" y="420" fill="#6a8fa0" font-size="9" font-family="Space Grotesk">篩選端點 · 帶入 vol/conc 參數</text>
+        <line x1="250" y1="385" x2="250" y2="434" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+        <text x="310" y="404" fill="#ffd166" font-size="10" font-family="JetBrains Mono">GET /api/stock/:code</text>
+        <text x="310" y="420" fill="#6a8fa0" font-size="9" font-family="Space Grotesk">個股詳情 + 歷史籌碼</text>
+        <line x1="455" y1="385" x2="455" y2="434" stroke="rgba(255,255,255,.06)" stroke-width="1"/>
+        <text x="475" y="404" fill="#ffd166" font-size="10" font-family="JetBrains Mono">POST /api/watchlist</text>
+        <text x="475" y="420" fill="#6a8fa0" font-size="9" font-family="Space Grotesk">自選股 CRUD · JWT Auth</text>
+
+        <!-- Arrow API → Frontend -->
+        <line x1="640" y1="410" x2="700" y2="410" stroke="#00d2ff" stroke-width="1.5" stroke-dasharray="4,3" opacity=".5" marker-end="url(#arr)"/>
+
+        <!-- Frontend box -->
+        <rect x="700" y="380" width="180" height="60" rx="12" fill="#0f1e35" stroke="rgba(0,210,255,.3)" stroke-width="1.5"/>
+        <text x="790" y="404" text-anchor="middle" fill="#00d2ff" font-size="11" font-family="Space Grotesk" font-weight="700">前端 React</text>
+        <text x="790" y="420" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="Space Grotesk">StockRadar SPA</text>
+
+        <!-- Email box -->
+        <rect x="700" y="272" width="180" height="68" rx="12" fill="#0f1e35" stroke="rgba(255,77,106,.25)" stroke-width="1.5"/>
+        <text x="790" y="294" text-anchor="middle" fill="#ff4d6a" font-size="11" font-family="Space Grotesk" font-weight="700">Resend Email</text>
+        <text x="790" y="308" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="JetBrains Mono">HTML template</text>
+        <text x="790" y="322" text-anchor="middle" fill="#6a8fa0" font-size="9" font-family="Space Grotesk">週六/週日 08:00 寄送</text>
+
+        <!-- GH Actions → scraper -->
+        <line x1="660" y1="155" x2="660" y2="420" stroke="#fb923c" stroke-width="1.5" stroke-dasharray="4,3" opacity=".35"/>
+        <line x1="660" y1="420" x2="641" y2="420" stroke="#fb923c" stroke-width="1.5" stroke-dasharray="4,3" opacity=".35" marker-end="url(#arr)"/>
+
+        <!-- GH Actions → Email -->
+        <line x1="730" y1="99" x2="790" y2="272" stroke="#fb923c" stroke-width="1.5" stroke-dasharray="4,3" opacity=".4" marker-end="url(#arr)"/>
+
+        <!-- scraper → email -->
+        <line x1="641" y1="300" x2="700" y2="300" stroke="#ff4d6a" stroke-width="1" stroke-dasharray="3,3" opacity=".3" marker-end="url(#arr2)"/>
+
+        <!-- labels on arrows -->
+        <text x="672" y="430" fill="#fb923c" font-size="8" font-family="Space Grotesk" opacity=".7">觸發</text>
+        <text x="646" y="297" fill="#ff4d6a" font-size="8" font-family="Space Grotesk" opacity=".6">notify</text>
+
+        <!-- legend -->
+        <text x="20" y="498" fill="#3d6070" font-size="9" font-family="Space Grotesk">── 資料流</text>
+        <text x="80" y="498" fill="#fb923c" font-size="9" font-family="Space Grotesk" opacity=".7">-- 觸發流</text>
+        <text x="145" y="498" fill="#ff4d6a" font-size="9" font-family="Space Grotesk" opacity=".6">-- 通知流</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- API ENDPOINTS -->
+  <section id="api">
+    <div class="sec-title">03 · 資料來源 API 端點</div>
+
+    <div class="tabs">
+      <button class="tab a" onclick="showApiTab('twse',this)">上市 TWSE</button>
+      <button class="tab" onclick="showApiTab('tpex',this)">上櫃 TPEX</button>
+      <button class="tab" onclick="showApiTab('tdcc',this)">集保爬蟲</button>
+    </div>
+
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden">
+      <div id="api-twse">
+        <table class="api-table">
+          <thead><tr><th>資料類型</th><th>方法 + URL</th><th>更新頻率</th><th>說明</th></tr></thead>
+          <tbody>
+            <tr>
+              <td style="font-weight:600;color:var(--text0)">全部上市股票<br>當日行情</td>
+              <td>
+                <span class="method get">GET</span>
+                <span class="url">https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL</span>
+                <div class="api-note">回傳 JSON 陣列，含所有上市股票當日開高低收量</div>
+              </td>
+              <td><span class="freq-chip freq-d">每交易日</span></td>
+              <td style="color:var(--text2);font-size:.75rem">收盤後約 17:00 更新。欄位包含 <span class="mono" style="color:var(--gold)">TradeVolume</span>（成交量）可計算均量</td>
+            </tr>
+            <tr>
+              <td style="font-weight:600;color:var(--text0)">個股日成交資訊</td>
+              <td>
+                <span class="method get">GET</span>
+                <span class="url">https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY?stockNo=2330&date=20260426</span>
+                <div class="api-note">單一股票歷史日資料，可用來計算 N 日均量</div>
+              </td>
+              <td><span class="freq-chip freq-d">每交易日</span></td>
+              <td style="color:var(--text2);font-size:.75rem">抓近 20 交易日平均成交量，判斷是否 ≥ 2000 張</td>
+            </tr>
+            <tr>
+              <td style="font-weight:600;color:var(--text0)">三大法人<br>買賣超彙總</td>
+              <td>
+                <span class="method get">GET</span>
+                <span class="url">https://openapi.twse.com.tw/v1/fund/TWT38U</span>
+                <div class="api-note">當日三大法人（外資、投信、自營商）買賣超張數</div>
+              </td>
+              <td><span class="freq-chip freq-d">每交易日</span></td>
+              <td style="color:var(--text2);font-size:.75rem">欄位 <span class="mono" style="color:var(--gold)">Foreign_Investor</span> / <span class="mono" style="color:var(--gold)">Investment_Trust</span> / <span class="mono" style="color:var(--gold)">Dealer</span></td>
+            </tr>
+            <tr>
+              <td style="font-weight:600;color:var(--text0)">上市公司基本資料<br>（含產業分類）</td>
+              <td>
+                <span class="method get">GET</span>
+                <span class="url">https://openapi.twse.com.tw/v1/opendata/t187ap03_L</span>
+                <div class="api-note">產業別、股本、上市日期等基本資料</div>
+              </td>
+              <td><span class="freq-chip freq-s">靜態/季更</span></td>
+              <td style="color:var(--text2);font-size:.75rem">欄位 <span class="mono" style="color:var(--gold)">產業別</span> 對應產業分類標籤</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="api-tpex" style="display:none">
+        <table class="api-table">
+          <thead><tr><th>資料類型</th><th>方法 + URL</th><th>更新頻率</th><th>說明</th></tr></thead>
+          <tbody>
+            <tr>
+              <td style="font-weight:600;color:var(--text0)">上櫃股票<br>日行情</td>
+              <td>
+                <span class="method get">GET</span>
+                <span class="url">https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes</span>
+                <div class="api-note">所有上櫃股票當日收盤資訊</div>
+              </td>
+              <td><span class="freq-chip freq-d">每交易日</span></td>
+              <td style="color:var(--text2);font-size:.75rem">回傳欄位格式與 TWSE 略有不同，需做欄位對齊處理</td>
+            </tr>
+            <tr>
+              <td style="font-weight:600;color:var(--text0)">上櫃三大法人</td>
+              <td>
+                <span class="method get">GET</span>
+                <span class="url">https://www.tpex.org.tw/openapi/v1/tpex_mainboard_3insti_tradestat</span>
+                <div class="api-note">上櫃三大法人買賣超彙總</div>
+              </td>
+              <td><span class="freq-chip freq-d">每交易日</span></td>
+              <td style="color:var(--text2);font-size:.75rem">與 TWSE 法人資料合併後入庫</td>
+            </tr>
+            <tr>
+              <td style="font-weight:600;color:var(--text0)">上櫃公司基本資料</td>
+              <td>
+                <span class="method get">GET</span>
+                <span class="url">https://www.tpex.org.tw/openapi/v1/tpex_mainboard_companies_information</span>
+                <div class="api-note">產業類別、公司資本額等</div>
+              </td>
+              <td><span class="freq-chip freq-s">靜態/季更</span></td>
+              <td style="color:var(--text2);font-size:.75rem">產業分類欄位名稱為 <span class="mono" style="color:var(--gold)">Industry</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="api-tdcc" style="display:none">
+        <table class="api-table">
+          <thead><tr><th>資料類型</th><th>方法 + URL</th><th>更新頻率</th><th>說明</th></tr></thead>
+          <tbody>
+            <tr>
+              <td style="font-weight:600;color:var(--text0)">持股分級分佈<br>（籌碼集中度核心）</td>
+              <td>
+                <span class="method post">POST</span>
+                <span class="url">https://www.tdcc.com.tw/portal/zh/smWeb/qryStock</span>
+                <div class="api-note">Body: scaDates=20260418&scaDate=20260418&SqlMethod=StockNo&StockNo=2330&REQ_TYPE=&clkStockNo=&clkStockName=</div>
+              </td>
+              <td><span class="freq-chip freq-w">每週五</span></td>
+              <td style="color:var(--text2);font-size:.75rem">回傳 HTML 含持股分級表。找 <b>400張以上</b> 各級人數加總 ÷ 總人數 = 集中度</td>
+            </tr>
+            <tr>
+              <td colspan="4" style="padding:1rem 1.25rem">
+                <div style="background:var(--bg3);border-radius:8px;padding:.85rem 1rem;font-size:.76rem;color:var(--text2);line-height:1.7">
+                  ⚠️ <b style="color:var(--gold)">注意事項</b>：集保資料每週四公告（統計至週五），週六排程執行時可抓到最新週資料。<br>
+                  批量抓取時建議 <b style="color:var(--cyan)">每次請求間隔 1~2 秒</b>，避免被限流。全市場約 2,000 檔股票，批量抓取預估 60~90 分鐘。<br>
+                  可先篩出日均量 > 2000 張的候選股（約 200~400 檔），再只抓這些股票的集保資料，大幅降低負荷。
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- DB SCHEMA -->
+  <section id="db">
+    <div class="sec-title">04 · 資料庫 Schema（PostgreSQL）</div>
+    <div class="schema-grid">
+
+      <div class="schema-table">
+        <div class="schema-head"><span class="tname">stocks</span><span class="tcomment">股票基本資料（靜態）</span></div>
+        <div class="schema-body">
+          <div class="srow"><span class="col">code</span><span class="type">VARCHAR(10)</span><span class="constraint pk">PK</span><span class="desc">股票代號 e.g. 2330</span></div>
+          <div class="srow"><span class="col">name</span><span class="type">VARCHAR(50)</span><span class="constraint"></span><span class="desc">公司名稱</span></div>
+          <div class="srow"><span class="col">market</span><span class="type">VARCHAR(4)</span><span class="constraint idx">IDX</span><span class="desc">TWSE / TPEX</span></div>
+          <div class="srow"><span class="col">industry</span><span class="type">VARCHAR(30)</span><span class="constraint idx">IDX</span><span class="desc">產業類別</span></div>
+          <div class="srow"><span class="col">isin</span><span class="type">VARCHAR(20)</span><span class="constraint"></span><span class="desc">國際證券識別碼</span></div>
+          <div class="srow"><span class="col">list_date</span><span class="type">DATE</span><span class="constraint"></span><span class="desc">上市/上櫃日期</span></div>
+          <div class="srow"><span class="col">updated_at</span><span class="type">TIMESTAMPTZ</span><span class="constraint"></span><span class="desc">基本資料更新時間</span></div>
+        </div>
+      </div>
+
+      <div class="schema-table">
+        <div class="schema-head"><span class="tname">daily_quotes</span><span class="tcomment">每日行情（時序主表）</span></div>
+        <div class="schema-body">
+          <div class="srow"><span class="col">id</span><span class="type">BIGSERIAL</span><span class="constraint pk">PK</span><span class="desc"></span></div>
+          <div class="srow"><span class="col">stock_code</span><span class="type">VARCHAR(10)</span><span class="constraint fk">FK</span><span class="desc">→ stocks.code</span></div>
+          <div class="srow"><span class="col">trade_date</span><span class="type">DATE</span><span class="constraint idx">IDX</span><span class="desc">交易日期</span></div>
+          <div class="srow"><span class="col">open</span><span class="type">NUMERIC(10,2)</span><span class="constraint"></span><span class="desc">開盤價</span></div>
+          <div class="srow"><span class="col">high</span><span class="type">NUMERIC(10,2)</span><span class="constraint"></span><span class="desc">最高價</span></div>
+          <div class="srow"><span class="col">low</span><span class="type">NUMERIC(10,2)</span><span class="constraint"></span><span class="desc">最低價</span></div>
+          <div class="srow"><span class="col">close</span><span class="type">NUMERIC(10,2)</span><span class="constraint"></span><span class="desc">收盤價</span></div>
+          <div class="srow"><span class="col">volume</span><span class="type">BIGINT</span><span class="constraint idx">IDX</span><span class="desc">成交量（張）</span></div>
+          <div class="srow"><span class="col">avg_vol_20d</span><span class="type">NUMERIC(12,1)</span><span class="constraint"></span><span class="desc">20日均量（計算後存入）</span></div>
+          <div class="srow"><span class="col">UNIQUE</span><span class="type" style="color:var(--text3)">(stock_code, trade_date)</span><span class="constraint"></span><span class="desc"></span></div>
+        </div>
+      </div>
+
+      <div class="schema-table">
+        <div class="schema-head"><span class="tname">institutional_flow</span><span class="tcomment">三大法人買賣超</span></div>
+        <div class="schema-body">
+          <div class="srow"><span class="col">id</span><span class="type">BIGSERIAL</span><span class="constraint pk">PK</span></div>
+          <div class="srow"><span class="col">stock_code</span><span class="type">VARCHAR(10)</span><span class="constraint fk">FK</span><span class="desc">→ stocks.code</span></div>
+          <div class="srow"><span class="col">trade_date</span><span class="type">DATE</span><span class="constraint idx">IDX</span></div>
+          <div class="srow"><span class="col">foreign_net</span><span class="type">BIGINT</span><span class="constraint"></span><span class="desc">外資買賣超（張）</span></div>
+          <div class="srow"><span class="col">trust_net</span><span class="type">BIGINT</span><span class="constraint"></span><span class="desc">投信買賣超（張）</span></div>
+          <div class="srow"><span class="col">dealer_net</span><span class="type">BIGINT</span><span class="constraint"></span><span class="desc">自營商買賣超（張）</span></div>
+          <div class="srow"><span class="col">total_net</span><span class="type">BIGINT</span><span class="constraint"></span><span class="desc">三大合計（自動計算）</span></div>
+        </div>
+      </div>
+
+      <div class="schema-table">
+        <div class="schema-head"><span class="tname">chip_concentration</span><span class="tcomment">籌碼集中度（集保週資料）</span></div>
+        <div class="schema-body">
+          <div class="srow"><span class="col">id</span><span class="type">BIGSERIAL</span><span class="constraint pk">PK</span></div>
+          <div class="srow"><span class="col">stock_code</span><span class="type">VARCHAR(10)</span><span class="constraint fk">FK</span></div>
+          <div class="srow"><span class="col">week_date</span><span class="type">DATE</span><span class="constraint idx">IDX</span><span class="desc">集保公告週（週五日期）</span></div>
+          <div class="srow"><span class="col">holders_400up</span><span class="type">INTEGER</span><span class="constraint"></span><span class="desc">400張以上持股人數</span></div>
+          <div class="srow"><span class="col">holders_total</span><span class="type">INTEGER</span><span class="constraint"></span><span class="desc">總持股人數</span></div>
+          <div class="srow"><span class="col">conc_ratio</span><span class="type">NUMERIC(5,2)</span><span class="constraint idx">IDX</span><span class="desc">集中度 % （計算後存入）</span></div>
+          <div class="srow"><span class="col">shares_400up</span><span class="type">BIGINT</span><span class="constraint"></span><span class="desc">400張以上持股張數</span></div>
+        </div>
+      </div>
+
+      <div class="schema-table">
+        <div class="schema-head"><span class="tname">users</span><span class="tcomment">使用者帳號</span></div>
+        <div class="schema-body">
+          <div class="srow"><span class="col">id</span><span class="type">UUID</span><span class="constraint pk">PK</span></div>
+          <div class="srow"><span class="col">email</span><span class="type">VARCHAR(120)</span><span class="constraint idx">UNIQUE</span></div>
+          <div class="srow"><span class="col">hashed_pw</span><span class="type">VARCHAR(128)</span><span class="constraint"></span><span class="desc">bcrypt</span></div>
+          <div class="srow"><span class="col">name</span><span class="type">VARCHAR(50)</span><span class="constraint"></span></div>
+          <div class="srow"><span class="col">notify_email</span><span class="type">BOOLEAN</span><span class="constraint"></span><span class="desc">接收週報通知</span></div>
+          <div class="srow"><span class="col">created_at</span><span class="type">TIMESTAMPTZ</span><span class="constraint"></span></div>
+        </div>
+      </div>
+
+      <div class="schema-table">
+        <div class="schema-head"><span class="tname">watchlist</span><span class="tcomment">使用者自選清單</span></div>
+        <div class="schema-body">
+          <div class="srow"><span class="col">id</span><span class="type">BIGSERIAL</span><span class="constraint pk">PK</span></div>
+          <div class="srow"><span class="col">user_id</span><span class="type">UUID</span><span class="constraint fk">FK</span><span class="desc">→ users.id</span></div>
+          <div class="srow"><span class="col">stock_code</span><span class="type">VARCHAR(10)</span><span class="constraint fk">FK</span><span class="desc">→ stocks.code</span></div>
+          <div class="srow"><span class="col">added_at</span><span class="type">TIMESTAMPTZ</span><span class="constraint"></span></div>
+          <div class="srow"><span class="col">UNIQUE</span><span class="type" style="color:var(--text3)">(user_id, stock_code)</span><span class="constraint"></span></div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Core query -->
+    <div style="margin-top:1.25rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden">
+      <div style="padding:.65rem 1.1rem;background:var(--bg3);border-bottom:1px solid var(--border);font-size:.72rem;font-weight:700;color:var(--text2);letter-spacing:.06em">🔍 核心篩選 SQL</div>
+      <pre style="padding:1.1rem;font-family:'JetBrains Mono',monospace;font-size:.75rem;line-height:1.8;overflow-x:auto;color:var(--text1)"><span style="color:#6a8fa0">-- 篩選日均量 ≥ 2000 且籌碼集中度 ≥ 40% 的股票</span>
+<span style="color:#00d2ff">SELECT</span>
+    s.code, s.name, s.industry,
+    dq.close, dq.avg_vol_20d,
+    cc.conc_ratio,
+    <span style="color:#ffd166">SUM</span>(if_.total_net) <span style="color:#00d2ff">AS</span> inst_net_5d
+<span style="color:#00d2ff">FROM</span> stocks s
+<span style="color:#00d2ff">JOIN</span> daily_quotes dq
+    <span style="color:#00d2ff">ON</span> dq.stock_code = s.code
+    <span style="color:#00d2ff">AND</span> dq.trade_date = <span style="color:#00e49a">CURRENT_DATE</span>
+<span style="color:#00d2ff">JOIN</span> chip_concentration cc
+    <span style="color:#00d2ff">ON</span> cc.stock_code = s.code
+    <span style="color:#00d2ff">AND</span> cc.week_date = (
+        <span style="color:#00d2ff">SELECT MAX</span>(week_date) <span style="color:#00d2ff">FROM</span> chip_concentration
+    )
+<span style="color:#00d2ff">LEFT JOIN</span> institutional_flow if_
+    <span style="color:#00d2ff">ON</span> if_.stock_code = s.code
+    <span style="color:#00d2ff">AND</span> if_.trade_date >= <span style="color:#00e49a">CURRENT_DATE</span> - <span style="color:#00d2ff">INTERVAL</span> <span style="color:#00e49a">'5 days'</span>
+<span style="color:#00d2ff">WHERE</span>
+    dq.avg_vol_20d >= <span style="color:#a78bfa">2000</span>      <span style="color:#6a8fa0">-- 日均量條件</span>
+    <span style="color:#00d2ff">AND</span> cc.conc_ratio >= <span style="color:#a78bfa">40.0</span>   <span style="color:#6a8fa0">-- 籌碼集中度條件</span>
+<span style="color:#00d2ff">GROUP BY</span> s.code, s.name, s.industry, dq.close, dq.avg_vol_20d, cc.conc_ratio
+<span style="color:#00d2ff">ORDER BY</span> cc.conc_ratio <span style="color:#00d2ff">DESC</span>;</pre>
+    </div>
+  </section>
+
+  <!-- SCHEDULER FLOW -->
+  <section id="scheduler">
+    <div class="sec-title">05 · 排程 + 爬蟲執行流程</div>
+
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--rlg);padding:1.1rem 1.25rem;margin-bottom:1.25rem;font-size:.78rem;color:var(--text2)">
+      🤖 <b style="color:var(--purple)">Claude Code</b> 由 <b style="color:var(--gold)">VPS crontab 每週六 / 週日 08:00</b> 自動喚醒，以 AI Agent 模式自主執行整個爬蟲 → 篩選 → 寄信流程，遇錯誤可自行除錯重試
+    </div>
+
+    <div class="flow-steps">
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <div class="step-title">VPS crontab 喚醒 Claude Code · <span style="color:var(--purple);font-size:.78rem">claude -p "執行台股週報任務"</span></div>
+          <div class="step-desc">VPS（Railway / Hetzner）上的 crontab 週六週日 08:00 觸發 Claude Code CLI，傳入任務描述，Claude 以 Agent 模式自主決定執行步驟。<br><br>
+          <b style="color:var(--cyan)">為什麼比 GitHub Actions 更好？</b><br>
+          ① 網站 HTML 結構改變時（如集保改版），Claude 可自行讀取新 HTML、修正解析邏輯再繼續<br>
+          ② 不需要維護 workflow YAML 檔，任務描述用自然語言即可<br>
+          ③ 可在 Email 中產出 AI 分析摘要（不只是數字，而是判讀）</div>
+          <div class="step-code"><span class="cm"># /etc/crontab — VPS 排程設定</span>
+<span class="str">0 0 * * 6</span> stockradar <span class="fn">claude</span> <span class="kw">-p</span> <span class="str">"執行台股週報任務：
+  1. 抓取 TWSE/TPEX 最新行情，計算20日均量
+  2. 爬取集保籌碼集中度（候選股）
+  3. 篩選 均量≥2000張 且 籌碼集中度≥40%
+  4. 寫入 PostgreSQL，發送 Email 週報
+  遇到錯誤請自行除錯後重試。"</span> \
+  <span class="kw">--allowedTools</span> <span class="str">"Bash,Read,Write,Edit"</span> \
+  <span class="kw">--max-turns</span> 50
+
+<span class="str">0 0 * * 0</span> stockradar <span class="fn">claude</span> <span class="kw">-p</span> <span class="str">"執行台股週報任務（週日版）"</span> \
+  <span class="kw">--allowedTools</span> <span class="str">"Bash,Read,Write,Edit"</span> <span class="kw">--max-turns</span> 50</div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <div class="step-title">Step 1 — 抓取 TWSE / TPEX 最新行情</div>
+          <div class="step-desc">打 TWSE STOCK_DAY_ALL + TPEX daily close API，取得所有股票當週最後一個交易日行情，計算 20 日均量，先過濾 vol ≥ 2000 的候選股</div>
+          <div class="step-code"><span class="cm"># scraper/twse_scraper.py</span>
+<span class="kw">import</span> httpx, pandas <span class="kw">as</span> pd
+
+<span class="kw">async def</span> <span class="fn">fetch_twse_all</span>():
+    url = <span class="str">"https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"</span>
+    <span class="kw">async with</span> httpx.AsyncClient() <span class="kw">as</span> client:
+        r = <span class="kw">await</span> client.<span class="fn">get</span>(url, timeout=30)
+    df = pd.<span class="fn">DataFrame</span>(r.<span class="fn">json</span>())
+    df[<span class="str">'volume_k'</span>] = pd.<span class="fn">to_numeric</span>(df[<span class="str">'TradeVolume'</span>], errors=<span class="str">'coerce'</span>) / 1000
+    <span class="kw">return</span> df[df[<span class="str">'volume_k'</span>] >= 2000]  <span class="cm"># 初步過濾</span></div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <div class="step-title">Step 2 — 爬取集保籌碼集中度</div>
+          <div class="step-desc">只針對 Step 1 過濾後的候選股（約 200~400 檔）逐一 POST 集保查詢，解析 HTML table，計算 400 張以上人數比例。每次請求間隔 1.5 秒</div>
+          <div class="step-code"><span class="cm"># scraper/tdcc_scraper.py</span>
+<span class="kw">async def</span> <span class="fn">fetch_chip_concentration</span>(stock_code: str, week_date: str) -> float:
+    url = <span class="str">"https://www.tdcc.com.tw/portal/zh/smWeb/qryStock"</span>
+    payload = {<span class="str">"scaDates"</span>: week_date, <span class="str">"SqlMethod"</span>: <span class="str">"StockNo"</span>,
+               <span class="str">"StockNo"</span>: stock_code, <span class="str">"REQ_TYPE"</span>: <span class="str">""</span>}
+    <span class="kw">async with</span> httpx.AsyncClient() <span class="kw">as</span> client:
+        r = <span class="kw">await</span> client.<span class="fn">post</span>(url, data=payload, timeout=20)
+    soup = <span class="fn">BeautifulSoup</span>(r.text, <span class="str">"html.parser"</span>)
+    rows = soup.<span class="fn">select</span>(<span class="str">"table.hasBorder tr"</span>)
+    <span class="cm"># 解析持股級距：400張以上 = 第13~16行</span>
+    holders_400up = <span class="fn">sum_holders_above_400</span>(rows)
+    total = <span class="fn">get_total_holders</span>(rows)
+    <span class="kw">return round</span>(holders_400up / total * 100, 2)</div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <div class="step-title">Step 3 — 合併資料、寫入 PostgreSQL</div>
+          <div class="step-desc">用 pandas merge 對齊股票代號，寫入 daily_quotes + chip_concentration。使用 upsert（ON CONFLICT DO UPDATE）避免重複</div>
+          <div class="step-code"><span class="cm"># pipeline/data_pipeline.py</span>
+<span class="kw">from</span> sqlalchemy <span class="kw">import</span> text
+
+<span class="kw">async def</span> <span class="fn">upsert_daily_quotes</span>(df, conn):
+    <span class="kw">for</span> _, row <span class="kw">in</span> df.<span class="fn">iterrows</span>():
+        <span class="kw">await</span> conn.<span class="fn">execute</span>(text(<span class="str">"""
+            INSERT INTO daily_quotes (stock_code, trade_date, close, volume, avg_vol_20d)
+            VALUES (:code, :date, :close, :vol, :avg)
+            ON CONFLICT (stock_code, trade_date) DO UPDATE
+            SET close=EXCLUDED.close, avg_vol_20d=EXCLUDED.avg_vol_20d
+        """</span>), row.<span class="fn">to_dict</span>())</div>
+        </div>
+      </div>
+
+      <div class="flow-step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <div class="step-title">Step 4 — 執行篩選，寄送 Email 通知</div>
+          <div class="step-desc">執行核心 SQL 取得符合條件股票，用 Jinja2 渲染 HTML 郵件模板，透過 Resend API 發送給所有 notify_email=true 的使用者</div>
+          <div class="step-code"><span class="cm"># notifier/email_sender.py</span>
+<span class="kw">import</span> resend
+<span class="kw">from</span> jinja2 <span class="kw">import</span> Environment, FileSystemLoader
+
+<span class="kw">async def</span> <span class="fn">send_weekly_report</span>(screened_stocks, recipients):
+    env = <span class="fn">Environment</span>(loader=<span class="fn">FileSystemLoader</span>(<span class="str">"templates"</span>))
+    html = env.<span class="fn">get_template</span>(<span class="str">"weekly_report.html"</span>).<span class="fn">render</span>(
+        stocks=screened_stocks,
+        date=<span class="fn">today_str</span>(),
+    )
+    resend.api_key = os.environ[<span class="str">"RESEND_API_KEY"</span>]
+    <span class="kw">for</span> email <span class="kw">in</span> recipients:
+        resend.Emails.<span class="fn">send</span>({
+            <span class="str">"from"</span>: <span class="str">"report@stockradar.tw"</span>,
+            <span class="str">"to"</span>: email,
+            <span class="str">"subject"</span>: <span class="str">f"📡 StockRadar 週報 {today_str()} — {len(screened_stocks)} 檔符合條件"</span>,
+            <span class="str">"html"</span>: html,
+        })</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div style="margin-top:2rem;background:var(--bg2);border:1px solid var(--border);border-radius:var(--rlg);padding:1.5rem">
+      <div style="font-size:.72rem;font-weight:700;letter-spacing:.09em;color:var(--text2);text-transform:uppercase;margin-bottom:1.25rem">週六排程執行時序（預估）</div>
+      <div style="display:flex;flex-wrap:wrap;gap:0">
+        <div class="tl-item">
+          <div class="tl-dot done"></div>
+          <div class="tl-label">08:00</div>
+          <div class="tl-sub">VPS cron → Claude Code 啟動</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot done"></div>
+          <div class="tl-label">08:02</div>
+          <div class="tl-sub">抓 TWSE/TPEX 行情<br>過濾候選股</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-label">08:05</div>
+          <div class="tl-sub">批量爬集保<br>~300 檔 × 1.5s</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-label">09:00</div>
+          <div class="tl-sub">資料清洗<br>寫入 PostgreSQL</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-label">09:05</div>
+          <div class="tl-sub">執行篩選 SQL<br>取得結果</div>
+        </div>
+        <div class="tl-item">
+          <div class="tl-dot"></div>
+          <div class="tl-label">09:06</div>
+          <div class="tl-sub">發送 Email<br>通知完成 ✓</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLAUDE CODE SECTION -->
+  <section id="claude-code">
+    <div class="sec-title">05b · Claude Code Agent 設計</div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:1rem;margin-bottom:1.5rem">
+
+      <div class="stack-card" style="border-color:rgba(167,139,250,.25)">
+        <div class="sc-head">
+          <div class="sc-icon" style="background:rgba(167,139,250,.15)">🤖</div>
+          <div>
+            <div class="sc-title">Claude Code 如何運作</div>
+            <div class="sc-sub">Agent Loop 自主執行</div>
+          </div>
+        </div>
+        <div class="sc-reason" style="line-height:1.85">
+          Claude Code 以 <b style="color:var(--purple)">Agent 模式</b>運作：接收任務描述 → 自行規劃步驟 → 呼叫 Bash/Read/Write 工具 → 檢查結果 → 遇錯自行修正 → 完成後回報。<br><br>
+          整個爬蟲、清洗、SQL、寄信流程都由 Claude 自主決策，無需人工介入。
+        </div>
+      </div>
+
+      <div class="stack-card" style="border-color:rgba(0,228,154,.2)">
+        <div class="sc-head">
+          <div class="sc-icon" style="background:rgba(0,228,154,.12)">🛠️</div>
+          <div>
+            <div class="sc-title">允許的工具清單</div>
+            <div class="sc-sub">--allowedTools 參數</div>
+          </div>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.65rem">
+          <span class="chip-btn on" style="pointer-events:none">Bash</span>
+          <span class="chip-btn on" style="pointer-events:none">Read</span>
+          <span class="chip-btn on" style="pointer-events:none">Write</span>
+          <span class="chip-btn on" style="pointer-events:none">Edit</span>
+        </div>
+        <div class="sc-reason">Bash：執行 Python 腳本、psql 指令<br>Read/Write/Edit：讀寫日誌、修改爬蟲邏輯<br><b style="color:var(--red)">不開放</b>：WebFetch（防止爬取非預期網站）</div>
+      </div>
+
+      <div class="stack-card" style="border-color:rgba(255,209,102,.2)">
+        <div class="sc-head">
+          <div class="sc-icon" style="background:rgba(255,209,102,.12)">⚡</div>
+          <div>
+            <div class="sc-title">自我修正能力</div>
+            <div class="sc-sub">vs GitHub Actions</div>
+          </div>
+        </div>
+        <div class="sc-reason" style="line-height:1.85">
+          <b style="color:var(--red)">GitHub Actions：</b>腳本報錯 → workflow 失敗 → 你隔天才發現<br><br>
+          <b style="color:var(--green)">Claude Code：</b>腳本報錯 → 讀錯誤訊息 → 分析原因（如集保HTML結構變了）→ 自行修改 parser → 重新執行 → 成功寄信
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TASK.md -->
+    <div style="background:var(--bg2);border:1px solid rgba(167,139,250,.25);border-radius:var(--rlg);overflow:hidden;margin-bottom:1.25rem">
+      <div style="padding:.65rem 1.1rem;background:var(--bg3);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:.75rem">
+        <span style="font-size:.72rem;font-weight:700;color:var(--purple);letter-spacing:.06em">📄 TASK.md — Claude Code 任務描述檔</span>
+        <span style="font-size:.68rem;color:var(--text3)">存放於專案根目錄，crontab 直接引用</span>
+      </div>
+      <pre style="padding:1.25rem;font-family:'JetBrains Mono',monospace;font-size:.74rem;line-height:1.85;overflow-x:auto;color:var(--text1)"><span style="color:#a78bfa"># StockRadar 週報任務</span>
+
+<span style="color:#ffd166">## 目標</span>
+每週六/週日自動執行台灣股市篩選，產出符合條件股票清單並寄送 Email 通知。
+
+<span style="color:#ffd166">## 篩選條件</span>
+- 日均成交量（近20交易日）<span style="color:#00e49a">&gt;= 2,000 張</span>
+- 籌碼集中度（400張以上持股人數比例）<span style="color:#00e49a">&gt;= 40%</span>
+- 同時符合上市（TWSE）與上櫃（TPEX）股票
+
+<span style="color:#ffd166">## 執行步驟</span>
+1. 執行 <span style="color:#00d2ff">python scraper/twse_scraper.py</span> 抓取最新行情
+2. 執行 <span style="color:#00d2ff">python scraper/tpex_scraper.py</span> 抓取上櫃行情
+3. 執行 <span style="color:#00d2ff">python scraper/tdcc_scraper.py --candidates</span> 只抓候選股集保資料
+4. 執行 <span style="color:#00d2ff">python pipeline/merge_and_filter.py</span> 合併篩選
+5. 執行 <span style="color:#00d2ff">python notifier/send_email.py</span> 發送 Resend Email
+
+<span style="color:#ffd166">## 錯誤處理</span>
+- 若任何步驟失敗，請讀取錯誤訊息，嘗試修正後重新執行（最多重試3次）
+- 若集保網站 HTML 結構改變，請自行調試 parser 邏輯
+- 若連續失敗，寄送錯誤通知信給 admin@stockradar.tw
+
+<span style="color:#ffd166">## 完成標準</span>
+Email 發送成功，並在 <span style="color:#00d2ff">logs/run_YYYYMMDD.log</span> 記錄執行結果</pre>
+    </div>
+
+    <!-- crontab setup -->
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--rlg);overflow:hidden">
+      <div style="padding:.65rem 1.1rem;background:var(--bg3);border-bottom:1px solid var(--border);font-size:.72rem;font-weight:700;color:var(--text2);letter-spacing:.06em">⚙️ VPS 環境設定（一次性）</div>
+      <pre style="padding:1.1rem;font-family:'JetBrains Mono',monospace;font-size:.74rem;line-height:1.85;overflow-x:auto;color:var(--text1)"><span style="color:#6a8fa0"># 1. 安裝 Claude Code</span>
+npm install -g @anthropic-ai/claude-code
+
+<span style="color:#6a8fa0"># 2. 設定環境變數（~/.bashrc 或 ~/.profile）</span>
+<span style="color:#00d2ff">export</span> ANTHROPIC_API_KEY=<span style="color:#00e49a">"sk-ant-..."</span>
+<span style="color:#00d2ff">export</span> DATABASE_URL=<span style="color:#00e49a">"postgresql://user:pass@host/stockradar"</span>
+<span style="color:#00d2ff">export</span> RESEND_API_KEY=<span style="color:#00e49a">"re_..."</span>
+
+<span style="color:#6a8fa0"># 3. 設定 crontab（crontab -e）</span>
+<span style="color:#ffd166">0 0 * * 6</span> cd /home/stockradar/app && claude -p <span style="color:#00e49a">"$(cat TASK.md)"</span> \
+  --allowedTools <span style="color:#00e49a">"Bash,Read,Write,Edit"</span> \
+  --max-turns 50 \
+  >> logs/cron_sat.log 2>&1
+
+<span style="color:#ffd166">0 0 * * 0</span> cd /home/stockradar/app && claude -p <span style="color:#00e49a">"$(cat TASK.md)"</span> \
+  --allowedTools <span style="color:#00e49a">"Bash,Read,Write,Edit"</span> \
+  --max-turns 50 \
+  >> logs/cron_sun.log 2>&1
+
+<span style="color:#6a8fa0"># 4. 手動測試（首次執行確認）</span>
+claude -p <span style="color:#00e49a">"$(cat TASK.md)"</span> --allowedTools <span style="color:#00e49a">"Bash,Read,Write,Edit"</span> --max-turns 50</pre>
+    </div>
+  </section>
+
+  <!-- EMAIL PREVIEW -->
+  <section id="email">
+    <div class="sec-title">06 · Email 通知預覽</div>
+    <div class="email-preview">
+      <div class="ep-header">
+        <h2>📡 StockRadar 週報</h2>
+        <p>2026/04/26（週六）· 本週篩選結果</p>
+      </div>
+      <div class="ep-body">
+        <h3>✅ 本週符合條件股票（日均量 ≥ 2000張 · 籌碼集中度 ≥ 40%）</h3>
+        <table class="ep-stock-table">
+          <thead>
+            <tr>
+              <th>代號</th><th>名稱</th><th>產業</th><th>股價</th><th>日均量</th><th>籌碼集中度</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td class="ep-code">2330</td><td>台積電</td><td>半導體</td><td>908</td><td>18,540 張</td><td class="ep-conc">68.2%</td></tr>
+            <tr><td class="ep-code">2886</td><td>兆豐金</td><td>金融保險</td><td>44</td><td>22,000 張</td><td class="ep-conc">62.1%</td></tr>
+            <tr><td class="ep-code">2412</td><td>中華電</td><td>通訊網路</td><td>128</td><td>4,500 張</td><td class="ep-conc">71.3%</td></tr>
+            <tr><td class="ep-code">2454</td><td>聯發科</td><td>半導體</td><td>1,285</td><td>6,780 張</td><td class="ep-conc">55.4%</td></tr>
+            <tr><td class="ep-code">6505</td><td>台塑化</td><td>化學工業</td><td>88</td><td>3,200 張</td><td class="ep-conc">61.0%</td></tr>
+          </tbody>
+        </table>
+        <div class="ep-footer" style="margin-top:1rem;font-size:.72rem;color:#8aaab8">
+          StockRadar 自動週報 · 資料來源：TWSE、TPEX、集保結算所<br>
+          <a href="#" style="color:#0077cc">查看完整篩選結果</a> · <a href="#" style="color:#8aaab8">取消訂閱</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- NEXT STEPS -->
+  <section>
+    <div class="sec-title">07 · 建議實作順序</div>
+    <div class="flow-steps">
+      <div class="flow-step" style="border-color:rgba(0,228,154,.2)">
+        <div class="step-num" style="background:var(--green-dim);border-color:rgba(0,228,154,.3);color:var(--green)">①</div>
+        <div class="step-body">
+          <div class="step-title" style="color:var(--green)">Phase 1 · 資料層（1~2 週）</div>
+          <div class="step-desc">先把爬蟲跑起來：TWSE API 抓行情 → 計算均量 → 寫入本機 SQLite（先不用 PostgreSQL 加速迭代）。確認資料格式正確後，再換成 PostgreSQL。</div>
+        </div>
+      </div>
+      <div class="flow-step" style="border-color:rgba(0,210,255,.2)">
+        <div class="step-num" style="color:var(--cyan)">②</div>
+        <div class="step-body">
+          <div class="step-title" style="color:var(--cyan)">Phase 2 · 集保爬蟲（1 週）</div>
+          <div class="step-desc">加入集保 POST 爬蟲，解析 HTML 取得持股分級，計算 400 張以上比例。建議先用 Jupyter Notebook 驗證邏輯，再包成模組。</div>
+        </div>
+      </div>
+      <div class="flow-step" style="border-color:rgba(255,209,102,.2)">
+        <div class="step-num" style="background:rgba(255,209,102,.1);border-color:rgba(255,209,102,.3);color:var(--gold)">③</div>
+        <div class="step-body">
+          <div class="step-title" style="color:var(--gold)">Phase 3 · FastAPI + 前端串接（1~2 週）</div>
+          <div class="step-desc">建立 /api/screen 端點，讓前端 StockRadar 改成打真實 API 而非用假資料。部署到 Railway。</div>
+        </div>
+      </div>
+      <div class="flow-step" style="border-color:rgba(251,146,60,.2)">
+        <div class="step-num" style="background:rgba(251,146,60,.1);border-color:rgba(251,146,60,.3);color:var(--orange)">④</div>
+        <div class="step-body">
+          <div class="step-title" style="color:var(--orange)">Phase 4 · Claude Code 排程 + Email（3 天）</div>
+          <div class="step-desc">在 VPS 安裝 <code style="color:var(--cyan)">npm install -g @anthropic-ai/claude-code</code>，設定 crontab，寫好任務描述 prompt（存成 <code style="color:var(--gold)">TASK.md</code>），配置環境變數 <code>ANTHROPIC_API_KEY</code> / <code>DATABASE_URL</code> / <code>RESEND_API_KEY</code>。Claude 自主完成剩餘工作。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+function scrollTo(id) {
+  document.getElementById(id)?.scrollIntoView({behavior:'auto'});
+  document.querySelectorAll('.tnav').forEach(b=>b.classList.remove('a'));
+  event.target.classList.add('a');
+}
+
+function showApiTab(tab, btn) {
+  ['twse','tpex','tdcc'].forEach(t => {
+    document.getElementById('api-'+t).style.display = t===tab ? '' : 'none';
+  });
+  btn.closest('.tabs').querySelectorAll('.tab').forEach(b=>b.classList.remove('a'));
+  btn.classList.add('a');
+}
+</script>
+</body>
+</html>

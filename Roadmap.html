@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>StockRadar · 可優化項目 Roadmap</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-deep:#050b18;--bg-card:#0f1e35;--bg-elev:#152540;
+    --line:rgba(0,210,255,.12);--line-soft:rgba(255,255,255,.06);
+    --text:#e6f1ff;--text-mute:#8aa4c4;--text-dim:#5e7a96;
+    --accent:#00d2ff;--buy:#00e49a;--sell:#ff4d6a;--neutral:#a78bfa;--warn:#ffb547;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,"Noto Sans TC",sans-serif;
+    background:radial-gradient(1200px 800px at 20% 0%,#0a1830,#050b18 60%);
+    color:var(--text);line-height:1.7}
+  .wrap{max-width:1080px;margin:0 auto;padding:48px 28px 80px}
+  .badge{display:inline-block;padding:5px 12px;background:rgba(167,139,250,.12);
+         color:var(--neutral);border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.1em}
+  h1{font-size:36px;margin:14px 0 6px}
+  h2{font-size:22px;margin:48px 0 14px;color:var(--accent)}
+  p.lead{color:var(--text-mute)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;margin:18px 0}
+  .item{background:var(--bg-card);border:1px solid var(--line);
+        border-radius:14px;padding:22px;position:relative;transition:.2s}
+  .item:hover{border-color:var(--accent);transform:translateY(-2px)}
+  .item h3{margin:0 0 8px;font-size:16px;display:flex;align-items:center;gap:8px}
+  .item p{margin:0;color:var(--text-mute);font-size:13px;line-height:1.6}
+  .meta{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+  .tag{font-size:10px;padding:3px 8px;border-radius:4px;letter-spacing:.06em;font-weight:700}
+  .tag.p1{background:rgba(255,77,106,.12);color:var(--sell)}
+  .tag.p2{background:rgba(255,181,71,.12);color:var(--warn)}
+  .tag.p3{background:rgba(0,228,154,.12);color:var(--buy)}
+  .tag.p4{background:rgba(167,139,250,.12);color:var(--neutral)}
+  .tag.eff{background:rgba(0,210,255,.1);color:var(--accent)}
+  .priority-row{display:flex;align-items:center;gap:14px;font-size:13px;margin:6px 0;color:var(--text-mute)}
+  .legend{background:var(--bg-card);border:1px solid var(--line);border-radius:12px;padding:18px 22px;margin:14px 0}
+  hr{border:none;border-top:1px solid var(--line-soft);margin:36px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header style="margin-bottom:36px;border-bottom:1px solid var(--line);padding-bottom:24px">
+  <span class="badge">🚀 ROADMAP · 可優化項目</span>
+  <h1>StockRadar 進化清單</h1>
+  <p class="lead">目前 v1.0 完成核心功能。以下記錄之後可以持續迭代的方向，<strong>按優先級排序</strong>。</p>
+</header>
+
+<div class="legend">
+  <strong style="color:var(--accent);font-size:13px;letter-spacing:.1em">🏷️ 標籤說明</strong>
+  <div class="priority-row" style="margin-top:10px">
+    <span class="tag p1">P1</span>建議下一輪做 ·
+    <span class="tag p2">P2</span>有時間就做 ·
+    <span class="tag p3">P3</span>長期願望 ·
+    <span class="tag p4">P4</span>探索性
+  </div>
+  <div class="priority-row">
+    <span class="tag eff">📐 工作量</span>S=半天 / M=2-3天 / L=一週+
+  </div>
+</div>
+
+<!-- ═════ 使用者體驗 ═════ -->
+<h2>🎨 使用者體驗</h2>
+<div class="grid">
+
+  <div class="item">
+    <h3>📱 PWA 可安裝</h3>
+    <p>加 manifest.json + Service Worker，讓使用者把網站「加到主畫面」當 App 用，離線也能看 watchlist 快取。</p>
+    <div class="meta"><span class="tag p2">P2</span><span class="tag eff">📐 S</span></div>
+  </div>
+
+  <div class="item">
+    <h3>📲 RWD / 手機版</h3>
+    <p>目前先電腦版。手機版要重新設計表格 → 卡片視圖、把篩選器收進 Drawer、用 bottom navigation。</p>
+    <div class="meta"><span class="tag p2">P2</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>🌗 Light / Dark Theme</h3>
+    <p>目前只有 dark。加 toggle 給偏好淺色的使用者，CSS 變數已經拆好了，加新色票即可。</p>
+    <div class="meta"><span class="tag p3">P3</span><span class="tag eff">📐 S</span></div>
+  </div>
+
+  <div class="item">
+    <h3>🔍 進階搜尋</h3>
+    <p>支援多條件組合：「集中度 &gt; 50% AND 法人連 3 日買超 AND 產業 = 半導體」。</p>
+    <div class="meta"><span class="tag p1">P1</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>📈 個股 K 線圖</h3>
+    <p>目前只有法人折線。加 candlestick + 量能柱狀圖，用 lightweight-charts 函式庫。</p>
+    <div class="meta"><span class="tag p2">P2</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>🌐 i18n 多語言</h3>
+    <p>目前只有中文，加 i18next 支援英文、日文（給海外華人投資者）。</p>
+    <div class="meta"><span class="tag p3">P3</span><span class="tag eff">📐 M</span></div>
+  </div>
+</div>
+
+<!-- ═════ 功能擴充 ═════ -->
+<h2>⚙️ 功能擴充</h2>
+<div class="grid">
+
+  <div class="item">
+    <h3>🚨 即時警報</h3>
+    <p>使用者設條件（例如台積電集中度 &gt; 60%），達標即時 push 通知（Web Push / Line Notify）。</p>
+    <div class="meta"><span class="tag p1">P1</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>📰 新聞整合</h3>
+    <p>個股頁加近 7 日新聞（Google News RSS），AI 摘要關鍵事件用 Claude API。</p>
+    <div class="meta"><span class="tag p2">P2</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>📊 歷史回測</h3>
+    <p>選一組篩選條件，看「過去 3 個月用這條件選的股票，平均報酬率多少」。</p>
+    <div class="meta"><span class="tag p2">P2</span><span class="tag eff">📐 L</span></div>
+  </div>
+
+  <div class="item">
+    <h3>🤖 AI 助理</h3>
+    <p>用 Claude API：「幫我選最近籌碼穩定的中小型半導體」→ 自動轉成篩選條件。</p>
+    <div class="meta"><span class="tag p3">P3</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>💰 投組績效</h3>
+    <p>使用者輸入持股 + 成本，自動計算當前 P&amp;L、加權報酬率、風險集中度分析。</p>
+    <div class="meta"><span class="tag p2">P2</span><span class="tag eff">📐 L</span></div>
+  </div>
+
+  <div class="item">
+    <h3>📑 自訂報表</h3>
+    <p>讓使用者選欄位、篩選器、頻率，自訂客製化 email 週報而不用所有人收同樣內容。</p>
+    <div class="meta"><span class="tag p3">P3</span><span class="tag eff">📐 M</span></div>
+  </div>
+</div>
+
+<!-- ═════ 資料品質 ═════ -->
+<h2>🗄️ 資料品質</h2>
+<div class="grid">
+
+  <div class="item">
+    <h3>📅 集保資料每日更新</h3>
+    <p>目前每週才一筆。集保官網其實有日資料，可改抓日頻提升即時性（但要顧 rate limit）。</p>
+    <div class="meta"><span class="tag p1">P1</span><span class="tag eff">📐 S</span></div>
+  </div>
+
+  <div class="item">
+    <h3>🔢 財報指標</h3>
+    <p>加入 EPS、毛利率、ROE、本益比等基本面，可篩「籌碼集中 + 高 ROE」這類複合條件。</p>
+    <div class="meta"><span class="tag p1">P1</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>📉 技術指標</h3>
+    <p>計算 KD / RSI / MACD / 均線排列，作為篩選條件之一。</p>
+    <div class="meta"><span class="tag p2">P2</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>📊 ETF 成分股</h3>
+    <p>支援查 0050/0056/006208 持股、權重變化、近期調整。</p>
+    <div class="meta"><span class="tag p3">P3</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>🔄 資料補洞</h3>
+    <p>排程偵測「過去 N 天 daily_quotes 缺失」自動回補，避免某天爬蟲掛了就漏資料。</p>
+    <div class="meta"><span class="tag p1">P1</span><span class="tag eff">📐 S</span></div>
+  </div>
+</div>
+
+<!-- ═════ 工程基礎 ═════ -->
+<h2>🛠️ 工程基礎</h2>
+<div class="grid">
+
+  <div class="item">
+    <h3>🧪 單元測試</h3>
+    <p>pytest 補爬蟲解析邏輯測試。確保 TWSE / TPEX 改 API 格式時能立刻發現。</p>
+    <div class="meta"><span class="tag p1">P1</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>🚀 CI/CD</h3>
+    <p>GitHub Actions：push → 跑 lint + test → SSH 自動部署到 VPS。</p>
+    <div class="meta"><span class="tag p2">P2</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>📡 Sentry 錯誤監控</h3>
+    <p>後端錯誤自動回報，免費額度 5K events/月足夠個人專案。</p>
+    <div class="meta"><span class="tag p1">P1</span><span class="tag eff">📐 S</span></div>
+  </div>
+
+  <div class="item">
+    <h3>⚡ Redis 快取</h3>
+    <p><code>/api/screen</code> 結果快取 5 分鐘，減少資料庫 JOIN 開銷。</p>
+    <div class="meta"><span class="tag p2">P2</span><span class="tag eff">📐 S</span></div>
+  </div>
+
+  <div class="item">
+    <h3>🔐 OAuth 第三方登入</h3>
+    <p>Google / Apple sign-in，用 authlib，省去使用者註冊密碼麻煩。</p>
+    <div class="meta"><span class="tag p3">P3</span><span class="tag eff">📐 M</span></div>
+  </div>
+
+  <div class="item">
+    <h3>📈 Grafana 儀表板</h3>
+    <p>監控爬蟲成功率、API 延遲、DB 連線數，掛 Prometheus 收 metrics。</p>
+    <div class="meta"><span class="tag p3">P3</span><span class="tag eff">📐 M</span></div>
+  </div>
+</div>
+
+<!-- ═════ 商業 ═════ -->
+<h2>💼 商業 / 商品化（探索）</h2>
+<div class="grid">
+  <div class="item">
+    <h3>📱 原生 iOS App</h3>
+    <p>Swift / SwiftUI，App Store 上架。記錄為長期目標，先確認 PWA 滿足度再說。</p>
+    <div class="meta"><span class="tag p4">P4</span><span class="tag eff">📐 L</span></div>
+  </div>
+  <div class="item">
+    <h3>📱 Android App</h3>
+    <p>Kotlin / Jetpack Compose，或用 React Native 共用前端邏輯。</p>
+    <div class="meta"><span class="tag p4">P4</span><span class="tag eff">📐 L</span></div>
+  </div>
+  <div class="item">
+    <h3>💳 訂閱制</h3>
+    <p>免費版限 watchlist 5 檔，Pro $9/月解鎖回測、進階指標、即時警報。Stripe 串接。</p>
+    <div class="meta"><span class="tag p4">P4</span><span class="tag eff">📐 L</span></div>
+  </div>
+</div>
+
+<hr>
+<p style="text-align:center;color:var(--text-dim);font-size:12px">
+  📡 StockRadar Roadmap · 持續更新中
+</p>
+
+</div>
+</body>
+</html>

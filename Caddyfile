@@ -1,0 +1,47 @@
+# StockRadar — Caddyfile
+# 自動申請 Let's Encrypt TLS 憑證，HTTP 自動跳轉 HTTPS
+#
+# 使用前：在 .env 設定 DOMAIN=your-domain.com
+# 啟動前：DNS A record 必須已指向 VPS IP
+
+{$DOMAIN} {
+    # 所有流量先記錄來源 IP（Caddy 自動處理 X-Forwarded-For）
+
+    # /api/ 直接代理到 FastAPI（略過 nginx，減少一層 hop）
+    handle /api/* {
+        reverse_proxy api:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            transport http {
+                read_timeout 60s
+            }
+        }
+    }
+
+    # 其他全部交給 nginx（前端 SPA）
+    handle {
+        reverse_proxy frontend:80 {
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # 壓縮靜態資源
+    encode zstd gzip
+
+    # TLS 自動申請 Let's Encrypt（email 填 .env 的 EMAIL_FROM）
+    tls {$TLS_EMAIL:noreply@stockradar.tw}
+
+    # 安全標頭
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options nosniff
+        X-Frame-Options SAMEORIGIN
+        Referrer-Policy strict-origin-when-cross-origin
+        -Server
+    }
+}
+
+# HTTP 自動跳轉 HTTPS（Caddy 預設行為，這裡只是明示）
+http://{$DOMAIN} {
+    redir https://{$DOMAIN}{uri} permanent
+}

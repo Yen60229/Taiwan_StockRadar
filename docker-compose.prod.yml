@@ -1,0 +1,93 @@
+# StockRadar — 生產環境 Docker Compose
+# 使用方式：docker compose -f docker-compose.prod.yml up -d
+#
+# 與開發版的差異：
+#   1. postgres / api 不對外暴露 port（只走內部 network）
+#   2. frontend port 3000 改為內部，由 Caddy 接手
+#   3. 新增 Caddy 反向代理（自動 HTTPS + Let's Encrypt）
+#   4. APP_ENV=production（關閉 debug、啟用快取）
+#
+# 必要前置：
+#   - 在 VPS 上建好 .env（參考 .env.example）
+#   - .env 中填入 DOMAIN=your-domain.com
+#   - DNS A record 指向 VPS IP
+#   - 開放 VPS 防火牆 80 / 443 port
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stockradar
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: stockradar
+      TZ: Asia/Taipei
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    # 生產環境不對外暴露 5432，降低攻擊面
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockradar"]
+      interval: 10s
+      retries: 5
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://stockradar:${DB_PASSWORD}@postgres:5432/stockradar
+      SECRET_KEY: ${SECRET_KEY}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-report@stockradar.tw}
+      CORS_ORIGINS: https://${DOMAIN}
+      APP_ENV: production
+      TZ: Asia/Taipei
+    volumes:
+      - ./backend:/app
+      - ./logs:/app/logs
+    # 生產環境不對外暴露 8000，由 Caddy 代理
+
+  scheduler:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://stockradar:${DB_PASSWORD}@postgres:5432/stockradar
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-report@stockradar.tw}
+      TZ: Asia/Taipei
+    volumes:
+      - ./backend:/app
+      - ./logs:/app/logs
+    command: ["sh", "/app/scripts/cron_entry.sh"]
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    # 不對外暴露，由 Caddy 代理
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 (QUIC)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - api
+
+volumes:
+  pg_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,46 @@
+# Environment — never commit secrets
+.env
+.env.local
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes / Caddy local cache
+caddy_data/
+caddy_config/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code internal files
+.claude/
+
+# Internal HTML files (dev tools / design drafts / private docs)
+"Phase1 教學手冊.html"
+Phase1\ 教學手冊.html
+"Deploy Manual.html"
+Deploy\ Manual.html
+"Phase1 Code Viewer.html"
+Phase1\ Code\ Viewer.html
+"Taiwan Stock Screener.html"
+Taiwan\ Stock\ Screener.html

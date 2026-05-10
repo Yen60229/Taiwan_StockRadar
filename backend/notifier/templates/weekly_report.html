@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>StockRadar 週報</title>
+</head>
+<body style="margin:0;padding:0;background:#f4f6f9;font-family:-apple-system,'Helvetica Neue',Arial,sans-serif;color:#1a2540;">
+<div style="max-width:680px;margin:0 auto;background:#fff;">
+
+  <!-- HEADER -->
+  <div style="background:linear-gradient(135deg,#0a1628,#152540);padding:32px 28px;color:#fff">
+    <div style="display:inline-block;padding:4px 10px;background:rgba(0,210,255,.15);color:#00d2ff;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:.08em">📊 STOCKRADAR · 週報</div>
+    <h1 style="margin:14px 0 4px;font-size:26px;letter-spacing:.02em">{{ run_date }} 篩選結果</h1>
+    <p style="margin:0;color:#a8c8d8;font-size:13px">日均量 ≥ {{ min_avg_vol }} 張 · 籌碼集中度 ≥ {{ min_conc }}%</p>
+  </div>
+
+  <!-- SUMMARY -->
+  <div style="display:flex;padding:24px 28px;background:#0f1e35;color:#fff;gap:20px">
+    <div style="flex:1">
+      <div style="font-size:11px;color:#6a8fa0;letter-spacing:.1em;text-transform:uppercase">本週符合</div>
+      <div style="font-size:32px;font-weight:700;color:#00d2ff;margin-top:4px">{{ total }} 檔</div>
+    </div>
+    <div style="flex:1">
+      <div style="font-size:11px;color:#6a8fa0;letter-spacing:.1em;text-transform:uppercase">新進榜</div>
+      <div style="font-size:32px;font-weight:700;color:#00e49a;margin-top:4px">+{{ new_in|length }}</div>
+    </div>
+    <div style="flex:1">
+      <div style="font-size:11px;color:#6a8fa0;letter-spacing:.1em;text-transform:uppercase">跌出榜外</div>
+      <div style="font-size:32px;font-weight:700;color:#ff4d6a;margin-top:4px">-{{ dropped|length }}</div>
+    </div>
+  </div>
+
+  <!-- TOP 10 -->
+  <div style="padding:28px">
+    <h2 style="margin:0 0 14px;font-size:16px;color:#0a1628;letter-spacing:.04em">🏆 集中度 TOP 10</h2>
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead>
+        <tr style="background:#f4f6f9;color:#6a8fa0;text-align:left">
+          <th style="padding:10px 12px">代號</th><th style="padding:10px 12px">名稱</th>
+          <th style="padding:10px 12px">產業</th><th style="padding:10px 12px;text-align:right">收盤</th>
+          <th style="padding:10px 12px;text-align:right">均量(張)</th><th style="padding:10px 12px;text-align:right">集中度</th>
+          <th style="padding:10px 12px;text-align:right">三大法人</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in top10 %}
+        <tr style="border-bottom:1px solid #eef2f5">
+          <td style="padding:10px 12px;font-family:monospace;font-weight:700;color:#00a8d4">{{ s.code }}</td>
+          <td style="padding:10px 12px;font-weight:600">{{ s.name }}</td>
+          <td style="padding:10px 12px;color:#6a8fa0;font-size:12px">{{ s.industry }}</td>
+          <td style="padding:10px 12px;text-align:right">{{ '%.1f'|format(s.close or 0) }}</td>
+          <td style="padding:10px 12px;text-align:right">{{ '{:,.0f}'.format(s.avg_vol_20d) }}</td>
+          <td style="padding:10px 12px;text-align:right;color:#a78bfa;font-weight:700">{{ '%.1f'|format(s.conc_ratio) }}%</td>
+          <td style="padding:10px 12px;text-align:right;color:{% if s.total_net > 0 %}#00a368{% else %}#ff4d6a{% endif %};font-weight:600">
+            {{ '+' if s.total_net > 0 else '' }}{{ '{:,}'.format(s.total_net) }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if new_in %}
+  <!-- NEW IN -->
+  <div style="padding:24px 28px;background:#f0fdf4;border-top:1px solid #d1fae5">
+    <h2 style="margin:0 0 12px;font-size:15px;color:#00a368">🆕 本週新進榜（最多列5檔）</h2>
+    {% for s in new_in %}
+    <div style="padding:8px 0;font-size:13px">
+      <span style="font-family:monospace;font-weight:700;color:#00a368">{{ s.code }}</span>
+      <span style="margin-left:8px;font-weight:600">{{ s.name }}</span>
+      <span style="color:#6a8fa0;margin-left:6px">·{{ s.industry }}</span>
+      <span style="float:right;color:#a78bfa">集中度 {{ '%.1f'|format(s.conc_ratio) }}%</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if dropped %}
+  <!-- DROPPED -->
+  <div style="padding:24px 28px;background:#fef2f2;border-top:1px solid #fecaca">
+    <h2 style="margin:0 0 12px;font-size:15px;color:#ff4d6a">📉 本週跌出榜外（最多列5檔）</h2>
+    {% for s in dropped %}
+    <div style="padding:8px 0;font-size:13px">
+      <span style="font-family:monospace;font-weight:700;color:#ff4d6a">{{ s.code }}</span>
+      <span style="margin-left:8px;font-weight:600">{{ s.name }}</span>
+      <span style="color:#6a8fa0;margin-left:6px">·{{ s.industry }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- INDUSTRY -->
+  <div style="padding:24px 28px;border-top:1px solid #eef2f5">
+    <h2 style="margin:0 0 12px;font-size:15px;color:#0a1628">🏭 產業分佈 TOP 6</h2>
+    {% for ind, count in top_industries %}
+    <div style="padding:6px 0">
+      <div style="display:flex;justify-content:space-between;font-size:13px">
+        <span>{{ ind }}</span><span style="color:#6a8fa0">{{ count }} 檔</span>
+      </div>
+      <div style="height:6px;background:#eef2f5;border-radius:3px;margin-top:4px">
+        <div style="height:100%;background:linear-gradient(90deg,#00d2ff,#00a8d4);border-radius:3px;width:{{ (count / total * 100)|round }}%"></div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- FOOTER -->
+  <div style="padding:24px 28px;background:#0a1628;color:#6a8fa0;font-size:11px;text-align:center;line-height:1.7">
+    持續上榜：{{ persist_count }} 檔 · 此信件由 StockRadar 自動產生<br>
+    本資訊僅供研究參考，不構成投資建議
+  </div>
+
+</div>
+</body>
+</html>
