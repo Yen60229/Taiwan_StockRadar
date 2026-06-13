@@ -32,7 +32,7 @@ TWSE_INDUSTRY_MAP: dict[str, str] = {
     "29": "電子通路業",   "30": "資訊服務業",   "31": "其他電子業",
     "32": "文化創意業",   "33": "農業科技業",   "34": "電子商務業",
     "35": "建設業",       "36": "運動休閒業",   "37": "觀光餐旅",
-    "38": "居家生活",
+    "38": "居家生活",     "91": "第一上市",
 }
 
 
@@ -281,33 +281,71 @@ async def fetch_institutional_flow(client: httpx.AsyncClient) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-# ── 5. 上市公司基本資料（含產業） ────────────────────────────
+# ── 5. 上市公司基本資料（ISIN 網站，產業名稱直接為中文） ──────
+# TWSE OpenAPI (t187ap03_L) 的產業別欄位為內部數字代碼，
+# 與傳統 01-38 分類不一致，會造成系統性錯位。
+# 改從 ISIN 網站（strMode=2）抓取，直接取得正確中文產業名稱。
+_ISIN_TWSE_URL = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
+_ISIN_HEADERS  = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-TW,zh;q=0.9",
+}
+
 async def fetch_company_info(client: httpx.AsyncClient) -> pd.DataFrame:
     """
-    回傳欄位：code, name, industry, list_date
+    從 ISIN 網站抓取上市公司基本資料（產業名稱直接為中文，不需代碼轉換）。
+    回傳欄位：code, name, short_name, industry
+
+    資料來源：https://isin.twse.com.tw/isin/C_public.jsp?strMode=2
+    ・編碼：Big5
+    ・每筆普通股 7 個 <td>：
+        cells[0] = "代號　名稱"（全型空格分隔）
+        cells[4] = 產業別（直接中文）
     """
-    url = f"{BASE_URL}/opendata/t187ap03_L"
-    data = await fetch_json(client, url)
-    df = pd.DataFrame(data)
+    _EMPTY = pd.DataFrame(columns=["code", "name", "short_name", "industry"])
+    try:
+        r = await client.get(_ISIN_TWSE_URL, headers=_ISIN_HEADERS, timeout=30)
+        html = r.content.decode("big5", errors="replace")
+    except Exception as e:
+        logger.warning(f"[TWSE] ISIN 網站抓取失敗：{e}")
+        return _EMPTY
 
-    col_map = {
-        "公司代號":   "code",
-        "公司名稱":   "name",
-        "公司簡稱":   "short_name",   # 市場簡稱（台積電、富邦金…）
-        "產業別":     "industry",
-        "上市日期":   "list_date",
-        "CFICode":    "isin",
-    }
-    df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
-    df = df[df["code"].str.match(r"^\d{4}$", na=False)].copy()
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html, "html.parser")
+    records = []
+    for row in soup.find_all("tr"):
+        cells = [td.get_text(strip=True) for td in row.find_all("td")]
+        if len(cells) != 7:
+            continue
+        raw = cells[0]
+        if "　" not in raw:
+            continue
+        parts = raw.split("　", 1)
+        if len(parts) != 2:
+            continue
+        code, name = parts[0].strip(), parts[1].strip()
+        if not re.match(r"^\d{4}$", code):   # 只取 4 碼上市普通股
+            continue
+        industry = cells[4].strip() or "其他"
+        records.append({
+            "code":       code,
+            "name":       name,
+            "short_name": name,
+            "industry":   industry,
+        })
 
-    # 產業代碼 → 中文名稱
-    if "industry" in df.columns:
-        df["industry"] = df["industry"].apply(map_industry)
+    df = pd.DataFrame(records)
+    if df.empty:
+        logger.warning("[TWSE] ISIN 解析結果為空（網頁結構可能變動）")
+        return _EMPTY
 
-    logger.info(f"[TWSE] 公司基本資料：{len(df)} 家")
-    keep = [c for c in ["code", "name", "short_name", "industry", "list_date"] if c in df.columns]
-    return df[keep]
+    logger.info(f"[TWSE] ISIN 公司基本資料：{len(df)} 家上市股票")
+    return df[["code", "name", "short_name", "industry"]]
 
 
 # ── 主流程 ────────────────────────────────────────────────────
