@@ -211,6 +211,9 @@ All data comes from publicly available sources — no paid APIs required.
 
 ## Roadmap
 
+> 📋 **完整的 1–2 年中長期發展藍圖**(後端 / 前端 / 雲端架構三軌路線圖 + 跨軌決議 + 學習地圖):
+> 見 [docs/roadmap/README.md](docs/roadmap/README.md)
+
 ### v1 — Done ✅
 
 - [x] TWSE + TPEX daily quote scraping
