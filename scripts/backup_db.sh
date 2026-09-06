@@ -41,9 +41,15 @@ fi
 SIZE=$(stat -c%s "$OUT")
 [ "$SIZE" -gt 10240 ] || { rm -f "$OUT"; die "dump 只有 ${SIZE} bytes，明顯不完整"; }
 
-if ! docker compose -f "$COMPOSE_FILE" exec -T postgres pg_restore -l - < "$OUT" > /dev/null 2>&1; then
+# pg_dump -Fc 的檔頭必定是 "PGDMP"
+[ "$(head -c 5 "$OUT")" = "PGDMP" ] || { rm -f "$OUT"; die "dump 檔頭不是 PGDMP，格式不正確"; }
+
+# 讓 pg_restore 實際解析一次 TOC。
+# ⚠️ 不能寫成 `pg_restore -l -`：pg_restore 不把 "-" 當標準輸入，
+#    而是去找一個檔名叫 "-" 的檔案。不給檔名才會從 stdin 讀。
+if ! ERR=$(docker compose -f "$COMPOSE_FILE" exec -T postgres             pg_restore -l < "$OUT" 2>&1 >/dev/null); then
     rm -f "$OUT"
-    die "dump 無法被 pg_restore 讀取，已刪除"
+    die "dump 無法被 pg_restore 解析，已刪除。pg_restore 說：${ERR:-（無輸出）}"
 fi
 
 log "備份完成：$(du -h "$OUT" | cut -f1)"
