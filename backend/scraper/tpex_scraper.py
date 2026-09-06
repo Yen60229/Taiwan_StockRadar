@@ -283,6 +283,82 @@ async def run_tpex_pipeline() -> dict:
         }
 
 
+
+# ── 4. 指定日期的三大法人（歷史回補 / 每日排程用） ────────────
+# OpenAPI 的 tpex_3insti_daily_trading 只回「最新一天」，無法指定日期。
+# 歷史資料改用櫃買中心網站的 dailyTrade 端點（民國日期，如 115/09/04）。
+_TPEX_INSTI_BY_DATE_URL = "https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade"
+
+# 欄位索引（已用實際資料驗算：[10] + [13] + [22] == [23]）
+_TPEX_COL_FOREIGN = 10   # 外資及陸資買賣超（合計）
+_TPEX_COL_TRUST   = 13   # 投信買賣超
+_TPEX_COL_DEALER  = 22   # 自營商買賣超（合計）
+_TPEX_COL_TOTAL   = 23   # 三大法人買賣超合計
+
+
+def _to_roc_slash(d: date) -> str:
+    """date → 民國斜線格式，如 2026-09-04 → '115/09/04'"""
+    return f"{d.year - 1911}/{d.month:02d}/{d.day:02d}"
+
+
+async def fetch_institutional_flow_on(
+    client: httpx.AsyncClient, target: date
+) -> pd.DataFrame:
+    """
+    抓「指定交易日」的 TPEX 三大法人買賣超。
+    非交易日回傳空 DataFrame，不 raise。
+    """
+    try:
+        r = await client.get(
+            _TPEX_INSTI_BY_DATE_URL,
+            params={"type": "Daily", "sect": "EW",
+                    "date": _to_roc_slash(target), "id": "", "response": "json"},
+            headers=_ISIN_HEADERS,   # 需要瀏覽器 UA，否則被 Cloudflare 擋
+            timeout=30,
+        )
+        if r.status_code != 200:
+            return pd.DataFrame()
+        payload = r.json()
+    except Exception as e:
+        logger.warning(f"[TPEX] 三大法人 {target} 請求失敗：{e}")
+        return pd.DataFrame()
+
+    tables = payload.get("tables") or []
+    if not tables or not tables[0].get("data"):
+        return pd.DataFrame()
+
+    table = tables[0]
+    # 用回應自己回報的日期，避免要到的日期與實際資料不符
+    actual = target
+    if table.get("date"):
+        try:
+            y, m, dd = str(table["date"]).split("/")
+            actual = date(int(y) + 1911, int(m), int(dd))
+        except (ValueError, TypeError):
+            pass
+    if actual != target:
+        logger.warning(f"[TPEX] 要求 {target} 但回應日期為 {actual}，略過")
+        return pd.DataFrame()
+
+    records = []
+    for row in table["data"]:
+        code = str(row[0]).strip()
+        if not _TPEX_CODE_RE.match(code):
+            continue
+        records.append({
+            "code":        code,
+            "trade_date":  actual,
+            "foreign_net": _to_lots(row[_TPEX_COL_FOREIGN]),
+            "trust_net":   _to_lots(row[_TPEX_COL_TRUST]),
+            "dealer_net":  _to_lots(row[_TPEX_COL_DEALER]),
+            "total_net":   _to_lots(row[_TPEX_COL_TOTAL]),
+        })
+    if not records:
+        return pd.DataFrame()
+    return pd.DataFrame(records)[
+        ["code", "trade_date", "foreign_net", "trust_net", "dealer_net", "total_net"]
+    ]
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 

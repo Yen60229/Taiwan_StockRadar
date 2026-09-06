@@ -14,13 +14,24 @@ import logging
 from datetime import date, datetime
 from typing import Optional
 
+import httpx
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import AsyncSessionLocal, DailyQuote, InstitutionalFlow, ChipConcentration, Stock
-from scraper.twse_scraper import run_twse_pipeline
-from scraper.tpex_scraper import run_tpex_pipeline
+from scraper.twse_scraper import (
+    run_twse_pipeline,
+    fetch_all_quotes as twse_fetch_quotes,
+    fetch_institutional_flow_on as twse_inst_on,
+    HEADERS as TWSE_HEADERS,
+)
+from scraper.tpex_scraper import (
+    run_tpex_pipeline,
+    fetch_all_quotes as tpex_fetch_quotes,
+    fetch_institutional_flow_on as tpex_inst_on,
+    HEADERS as TPEX_HEADERS,
+)
 from scraper.tdcc_scraper import fetch_chip_batch
 from scraper.ownership_scraper import run_ownership_pipeline
 
@@ -477,6 +488,107 @@ async def run_full_pipeline() -> dict:
     }
 
 
+async def refresh_avg_vol(session: AsyncSession, trade_date: date) -> int:
+    """
+    以單一 SQL 重算「指定交易日」那批列的 20 日均量。
+
+    比起先算好再逐列 upsert，這樣做有兩個好處：
+      1. 今天的成交量本身也會被算進 20 日均量（先寫入再重算）
+      2. 一個 statement 取代 ~2000 次 round-trip
+    """
+    result = await session.execute(
+        text("""
+            WITH avg20 AS (
+                SELECT stock_code, ROUND(AVG(volume)::numeric, 1) AS av
+                FROM (
+                    SELECT stock_code, volume,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY stock_code ORDER BY trade_date DESC
+                           ) AS rn
+                    FROM daily_quotes
+                    WHERE volume > 0
+                ) t
+                WHERE rn <= :days
+                GROUP BY stock_code
+            )
+            UPDATE daily_quotes q
+            SET avg_vol_20d = a.av
+            FROM avg20 a
+            WHERE q.stock_code = a.stock_code
+              AND q.trade_date = :td
+        """),
+        {"days": AVG_VOL_DAYS, "td": trade_date},
+    )
+    await session.commit()
+    logger.info(f"[DB] 重算 {trade_date} 的 20 日均量：{result.rowcount} 筆")
+    return result.rowcount
+
+
+# ── 交易日盤後 Pipeline（每日排程） ───────────────────────────
+async def run_quotes_pipeline() -> dict:
+    """
+    交易日盤後模式：只更新「每天會變」的資料。
+      ① TWSE / TPEX 當日行情            → daily_quotes
+      ② 兩市三大法人買賣超（指定交易日）→ institutional_flow
+      ③ 以 SQL 重算該交易日的 20 日均量
+
+    刻意不碰 TDCC 集保籌碼與 HiStock 持股比例：那是**每週**更新的資料，
+    每天去抓 500+ 檔既拿不到新資訊，對來源也不禮貌 —— 交給週末的完整 pipeline。
+
+    非交易日執行是安全的：兩個行情 API 都回「最近一個交易日」的快照，
+    trade_date 取自 payload（不是 date.today()），因此只是把同一天的資料
+    再 upsert 一次，冪等、不會污染時序表。
+    """
+    logger.info("📈 StockRadar 交易日行情 Pipeline 開始")
+    logger.info("=" * 60)
+
+    async with httpx.AsyncClient(headers=TWSE_HEADERS, follow_redirects=True) as tc, \
+               httpx.AsyncClient(headers=TPEX_HEADERS, follow_redirects=True) as pc:
+
+        twse_q, tpex_q = await asyncio.gather(
+            twse_fetch_quotes(tc),
+            tpex_fetch_quotes(pc),
+        )
+
+        frames = [df for df in (twse_q, tpex_q) if not df.empty]
+        if not frames:
+            logger.error("[Daily] 兩市行情皆為空，中止（不寫入任何資料）")
+            return {"total": 0, "inst": 0, "trade_date": None}
+
+        all_quotes = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["code"])
+
+        # 各市場的交易日各自取自 payload，通常相同但不強制假設
+        twse_date = twse_q["trade_date"].iloc[0] if not twse_q.empty else None
+        tpex_date = tpex_q["trade_date"].iloc[0] if not tpex_q.empty else None
+        trade_date = twse_date or tpex_date
+        logger.info(f"[Daily] 行情 {len(all_quotes)} 檔，交易日 TWSE={twse_date} TPEX={tpex_date}")
+
+        # ② 三大法人：用行情回報的交易日去要，確保兩張表日期一致
+        tasks, labels = [], []
+        if twse_date:
+            tasks.append(twse_inst_on(tc, twse_date)); labels.append("TWSE")
+        if tpex_date:
+            tasks.append(tpex_inst_on(pc, tpex_date)); labels.append("TPEX")
+        inst_frames = list(await asyncio.gather(*tasks)) if tasks else []
+
+    for label, df in zip(labels, inst_frames):
+        logger.info(f"[Daily] {label} 三大法人：{len(df)} 筆")
+
+    # ③ 寫入
+    async with AsyncSessionLocal() as session:
+        await upsert_daily_quotes(session, all_quotes)
+        await refresh_avg_vol(session, trade_date)
+        for df in inst_frames:
+            if not df.empty:
+                await upsert_institutional_flow(session, df)
+
+    inst_total = sum(len(df) for df in inst_frames)
+    logger.info("=" * 60)
+    logger.info(f"✅ 行情 Pipeline 完成：{len(all_quotes)} 檔行情、{inst_total} 筆法人（{trade_date}）")
+
+    return {"total": len(all_quotes), "inst": inst_total, "trade_date": trade_date}
+
+
 # ── 非交易日 Pipeline ─────────────────────────────────────────
 async def run_offline_pipeline() -> dict:
     """
@@ -588,13 +700,17 @@ if __name__ == "__main__":
         datefmt="%H:%M:%S",
     )
 
-    # python -m pipeline.data_pipeline          → 完整 pipeline（有開盤）
-    # python -m pipeline.data_pipeline offline  → 非交易日模式
-    offline_mode = len(sys.argv) > 1 and sys.argv[1] == "offline"
+    # python -m pipeline.data_pipeline          → 完整 pipeline（行情 + 籌碼 + 持股）
+    # python -m pipeline.data_pipeline quotes   → 交易日盤後：只更新行情 + 法人 + 均量
+    # python -m pipeline.data_pipeline offline  → 非交易日：不抓行情，只更新籌碼 + 持股
+    mode = sys.argv[1] if len(sys.argv) > 1 else "full"
 
     async def _run():
-        if offline_mode:
-            logger.info("▶ 非交易日模式（--offline）")
+        if mode == "quotes":
+            logger.info("▶ 交易日盤後模式（quotes）")
+            result = await run_quotes_pipeline()
+        elif mode == "offline":
+            logger.info("▶ 非交易日模式（offline）")
             result = await run_offline_pipeline()
         else:
             result = await run_full_pipeline()

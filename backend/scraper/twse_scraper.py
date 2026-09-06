@@ -409,6 +409,57 @@ async def run_twse_pipeline() -> dict:
 
 
 # ── CLI 測試用 ────────────────────────────────────────────────
+
+# ── 6. 指定日期的三大法人（歷史回補 / 每日排程用） ────────────
+def _parse_t86_payload(payload: dict, target: date) -> pd.DataFrame:
+    """把 T86 的 JSON payload 解析成標準欄位；非交易日回傳空 DataFrame"""
+    if payload.get("stat") != "OK" or not payload.get("data"):
+        return pd.DataFrame()
+
+    records = []
+    for row in payload["data"]:
+        code = str(row[0]).strip()
+        if not _CODE_RE.match(code):
+            continue
+        records.append({
+            "code":        code,
+            "trade_date":  target,
+            "foreign_net": _parse_shares_to_lots(row[4]),   # 外陸資買賣超（不含外資自營商）
+            "trust_net":   _parse_shares_to_lots(row[10]),  # 投信買賣超
+            "dealer_net":  _parse_shares_to_lots(row[11]),  # 自營商買賣超
+            "total_net":   _parse_shares_to_lots(row[18]),  # 三大法人合計
+        })
+    if not records:
+        return pd.DataFrame()
+    return pd.DataFrame(records)[
+        ["code", "trade_date", "foreign_net", "trust_net", "dealer_net", "total_net"]
+    ]
+
+
+async def fetch_institutional_flow_on(
+    client: httpx.AsyncClient, target: date
+) -> pd.DataFrame:
+    """
+    抓「指定交易日」的 TWSE 三大法人買賣超。
+    非交易日（假日 / 尚未公布）回傳空 DataFrame，不往前找、不 raise。
+    """
+    date_str = target.strftime("%Y%m%d")
+    try:
+        r = await client.get(
+            _T86_URL,
+            params={"date": date_str, "selectType": "ALL", "response": "json"},
+            headers=_T86_HEADERS,
+            timeout=REQUEST_TIMEOUT,
+        )
+        if r.status_code != 200:
+            return pd.DataFrame()
+        payload = r.json()
+    except Exception as e:
+        logger.warning(f"[TWSE] T86 {date_str} 請求失敗：{e}")
+        return pd.DataFrame()
+
+    return _parse_t86_payload(payload, target)
+
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
