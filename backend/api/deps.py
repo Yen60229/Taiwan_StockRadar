@@ -21,11 +21,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from models.database import AsyncSessionLocal, User
 
 SECRET_KEY = os.environ.get("SECRET_KEY")
-if not SECRET_KEY:
-    # 沒有 SECRET_KEY 就拒絕啟動：留 fallback 等於任何人都能簽發合法 token
+# 未設定、或原封不動照抄 .env.example 的樣板值，都拒絕啟動：
+# 兩者都等於「任何人都能簽發合法 token」。
+_PLACEHOLDER_KEYS = {
+    "change-me",
+    "change-me-in-production",
+    "change-me-use-a-long-random-string",
+}
+if not SECRET_KEY or SECRET_KEY.strip().lower() in _PLACEHOLDER_KEYS:
     raise RuntimeError(
-        "SECRET_KEY 環境變數未設定，拒絕啟動。"
-        "請在 .env 設定 SECRET_KEY（建議：openssl rand -base64 48）"
+        "SECRET_KEY 未設定或仍是樣板值，拒絕啟動。"
+        "請在 .env 填入隨機值（openssl rand -base64 48）"
     )
 ALGORITHM  = os.environ.get("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
