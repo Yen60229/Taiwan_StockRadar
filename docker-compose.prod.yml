@@ -84,6 +84,11 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"   # HTTP/3 (QUIC)
+    environment:
+      # Caddyfile 用 {$DOMAIN} / {$TLS_EMAIL} 讀「容器內」的環境變數。
+      # 根目錄 .env 只供 compose 檔本身展開，不會自動注入容器，必須在這裡明列。
+      DOMAIN: ${DOMAIN:?DOMAIN 未設定，Caddy 無法決定要為哪個網域申請憑證}
+      TLS_EMAIL: ${TLS_EMAIL:-}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
