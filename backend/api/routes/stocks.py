@@ -5,7 +5,7 @@ GET /api/stocks/{code}/inst-flow  近30日法人買賣超
 """
 from datetime import date, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -4,7 +4,7 @@ POST /api/auth/register
 POST /api/auth/login
 GET  /api/auth/me
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -19,7 +19,7 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.database import AsyncSessionLocal, DailyQuote, InstitutionalFlow, ChipConcentration, Stock
+from models.database import AsyncSessionLocal
 from scraper.twse_scraper import (
     run_twse_pipeline,
     fetch_all_quotes as twse_fetch_quotes,

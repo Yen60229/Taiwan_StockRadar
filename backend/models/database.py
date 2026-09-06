@@ -3,9 +3,7 @@ StockRadar - Database Models & Connection
 PostgreSQL + SQLAlchemy (async)
 """
 import os
-from datetime import date, datetime
-from decimal import Decimal
-from typing import Optional
+from datetime import datetime
 
 from sqlalchemy import (
     BigInteger, Boolean, Column, Date, DateTime,

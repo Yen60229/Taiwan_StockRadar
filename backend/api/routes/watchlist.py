@@ -4,7 +4,6 @@ GET    /api/watchlist
 POST   /api/watchlist
 DELETE /api/watchlist/{code}
 """
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, delete, select

@@ -9,7 +9,6 @@ StockRadar - 資料初始化（第一次跑用）
 """
 import asyncio
 import logging
-from datetime import date, timedelta
 
 from models.database import init_db
 from pipeline.data_pipeline import run_full_pipeline

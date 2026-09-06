@@ -3,11 +3,10 @@ StockRadar - Screen Routes
 GET /api/screen          篩選結果（雙條件 + 法人）
 GET /api/screen/industries  取得所有產業類別清單
 """
-from datetime import date, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import and_, distinct, func, or_, select
+from sqlalchemy import and_, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user_optional, get_db_session
