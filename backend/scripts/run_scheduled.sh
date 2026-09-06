@@ -23,8 +23,12 @@ LOG="logs/scheduled_$(date '+%Y%m%d').log"
     sleep 60
   done
 
-  echo "📧 寄送週報"
-  python -m notifier.send_email || echo "⚠️ Email 發送失敗"
+  if [ "${SKIP_EMAIL:-0}" = "1" ]; then
+    echo "📧 略過週報（SKIP_EMAIL=1）"
+  else
+    echo "📧 寄送週報"
+    python -m notifier.send_email || echo "⚠️ Email 發送失敗"
+  fi
 
   echo "✅ 排程結束 $(date '+%Y-%m-%d %H:%M:%S')"
 } 2>&1 | tee -a "$LOG"
