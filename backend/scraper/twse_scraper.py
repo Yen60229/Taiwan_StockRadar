@@ -10,11 +10,13 @@ StockRadar - TWSE 上市股票爬蟲
 import asyncio
 import logging
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Optional
 
 import httpx
 import pandas as pd
+
+from scraper import isin
 
 logger = logging.getLogger(__name__)
 
@@ -310,6 +312,7 @@ async def fetch_institutional_flow(client: httpx.AsyncClient) -> pd.DataFrame:
 # 與傳統 01-38 分類不一致，會造成系統性錯位。
 # 改從 ISIN 網站（strMode=2）抓取，直接取得正確中文產業名稱。
 _ISIN_TWSE_URL = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=2"
+TWSE_CODE_PATTERN = r"^\d{4}$"     # 上市普通股為 4 碼
 _ISIN_HEADERS  = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -331,45 +334,20 @@ async def fetch_company_info(client: httpx.AsyncClient) -> pd.DataFrame:
         cells[0] = "代號　名稱"（全型空格分隔）
         cells[4] = 產業別（直接中文）
     """
-    _EMPTY = pd.DataFrame(columns=["code", "name", "short_name", "industry"])
     try:
         r = await client.get(_ISIN_TWSE_URL, headers=_ISIN_HEADERS, timeout=30)
         html = r.content.decode("big5", errors="replace")
     except Exception as e:
         logger.warning(f"[TWSE] ISIN 網站抓取失敗：{e}")
-        return _EMPTY
+        return isin.empty_frame()
 
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(html, "html.parser")
-    records = []
-    for row in soup.find_all("tr"):
-        cells = [td.get_text(strip=True) for td in row.find_all("td")]
-        if len(cells) != 7:
-            continue
-        raw = cells[0]
-        if "　" not in raw:
-            continue
-        parts = raw.split("　", 1)
-        if len(parts) != 2:
-            continue
-        code, name = parts[0].strip(), parts[1].strip()
-        if not re.match(r"^\d{4}$", code):   # 只取 4 碼上市普通股
-            continue
-        industry = cells[4].strip() or "其他"
-        records.append({
-            "code":       code,
-            "name":       name,
-            "short_name": name,
-            "industry":   industry,
-        })
-
-    df = pd.DataFrame(records)
+    df = isin.parse_isin_html(html, TWSE_CODE_PATTERN)
     if df.empty:
         logger.warning("[TWSE] ISIN 解析結果為空（網頁結構可能變動）")
-        return _EMPTY
+        return df
 
     logger.info(f"[TWSE] ISIN 公司基本資料：{len(df)} 家上市股票")
-    return df[["code", "name", "short_name", "industry"]]
+    return df
 
 
 # ── 主流程 ────────────────────────────────────────────────────

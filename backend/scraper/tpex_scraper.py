@@ -13,11 +13,11 @@ import asyncio
 import logging
 import re
 from datetime import date
-from typing import Optional
 
 import httpx
 import pandas as pd
-from bs4 import BeautifulSoup
+
+from scraper import isin
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +196,7 @@ async def fetch_institutional_flow(client: httpx.AsyncClient) -> pd.DataFrame:
 # TPEX OpenAPI (tpex_mainboard_companies_information) 被 Cloudflare 封鎖（302 重導），
 # 改從 ISIN 網站抓取，ISIN 網站同時提供公司簡稱與產業分類。
 _ISIN_TPEX_URL = "https://isin.twse.com.tw/isin/C_public.jsp?strMode=4"
+TPEX_CODE_PATTERN = r"^\d{4,5}$"   # 上櫃普通股為 4~5 碼（排除權證 / ETF）
 _ISIN_HEADERS  = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -218,47 +219,20 @@ async def fetch_company_info(client: httpx.AsyncClient) -> pd.DataFrame:
         cells[0] = "代號　名稱"
         cells[4] = 產業別
     """
-    _EMPTY = pd.DataFrame(columns=["code", "name", "short_name", "industry"])
     try:
         r = await client.get(_ISIN_TPEX_URL, headers=_ISIN_HEADERS, timeout=30)
         html = r.content.decode("big5", errors="replace")
     except Exception as e:
         logger.warning(f"[TPEX] ISIN 網站抓取失敗：{e}")
-        return _EMPTY
+        return isin.empty_frame()
 
-    soup = BeautifulSoup(html, "html.parser")
-    records = []
-    for row in soup.find_all("tr"):
-        cells = [td.get_text(strip=True) for td in row.find_all("td")]
-        # 資料列共 7 格：有價證券代號及名稱 | ISIN | 上市日 | 市場別 | 產業別 | CFICode | 備註
-        if len(cells) != 7:
-            continue
-        raw = cells[0]
-        # cells[0] 格式：「代號　名稱」（全型空格 U+3000 分隔）
-        if "　" not in raw:
-            continue
-        parts = raw.split("　", 1)
-        if len(parts) != 2:
-            continue
-        code, name = parts[0].strip(), parts[1].strip()
-        # 只保留 4~5 位數普通股代號（排除 7xxxxx 權證、ETF 等）
-        if not re.match(r"^\d{4,5}$", code):
-            continue
-        industry = cells[4].strip() or "其他"
-        records.append({
-            "code":       code,
-            "name":       name,
-            "short_name": name,   # ISIN 的名稱本身已是市場簡稱
-            "industry":   industry,
-        })
-
-    df = pd.DataFrame(records)
+    df = isin.parse_isin_html(html, TPEX_CODE_PATTERN)
     if df.empty:
         logger.warning("[TPEX] ISIN 解析結果為空（網頁結構可能變動）")
-        return _EMPTY
+        return df
 
     logger.info(f"[TPEX] ISIN 公司基本資料：{len(df)} 家上櫃股票")
-    return df[["code", "name", "short_name", "industry"]]
+    return df
 
 
 # ── 主流程 ────────────────────────────────────────────────────
@@ -323,6 +297,14 @@ async def fetch_institutional_flow_on(
         logger.warning(f"[TPEX] 三大法人 {target} 請求失敗：{e}")
         return pd.DataFrame()
 
+    return parse_insti_payload(payload, target)
+
+
+def parse_insti_payload(payload: dict, target: date) -> pd.DataFrame:
+    """
+    解析 TPEX dailyTrade 的 JSON payload。
+    抽成純函式是為了讓欄位索引（最容易因改版而錯位的地方）可以離線測試。
+    """
     tables = payload.get("tables") or []
     if not tables or not tables[0].get("data"):
         return pd.DataFrame()
