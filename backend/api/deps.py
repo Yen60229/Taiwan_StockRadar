@@ -5,6 +5,7 @@ StockRadar - 共用依賴 (FastAPI Depends)
 - create_access_token: 簽發 JWT
 - hash_password / verify_password
 """
+import asyncio
 import os
 from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator, Optional
@@ -19,7 +20,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.database import AsyncSessionLocal, User
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "change-me-in-production")
+SECRET_KEY = os.environ.get("SECRET_KEY")
+if not SECRET_KEY:
+    # 沒有 SECRET_KEY 就拒絕啟動：留 fallback 等於任何人都能簽發合法 token
+    raise RuntimeError(
+        "SECRET_KEY 環境變數未設定，拒絕啟動。"
+        "請在 .env 設定 SECRET_KEY（建議：openssl rand -base64 48）"
+    )
 ALGORITHM  = os.environ.get("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "10080"))
 
@@ -36,12 +43,16 @@ async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 # ── 密碼處理（直接用 bcrypt，跳過 passlib 相容性問題）────────
-def hash_password(password: str) -> str:
-    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
+# bcrypt 是刻意設計成慢的 CPU-bound 運算（~100ms），直接呼叫會卡住 event loop，
+# 所以丟到 thread pool 執行。
+async def hash_password(password: str) -> str:
+    return await asyncio.to_thread(
+        lambda: _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
+    )
 
 
-def verify_password(plain: str, hashed: str) -> bool:
-    return _bcrypt.checkpw(plain.encode(), hashed.encode())
+async def verify_password(plain: str, hashed: str) -> bool:
+    return await asyncio.to_thread(_bcrypt.checkpw, plain.encode(), hashed.encode())
 
 
 # ── JWT ──────────────────────────────────────────────────────
@@ -70,13 +81,12 @@ async def get_current_user(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id = payload.get("sub")
-        if not user_id:
-            raise cred_exc
-    except JWTError:
+        # sub 缺少或不是合法 UUID 都視為壞 token → 401，而不是讓 ValueError 變成 500
+        user_id = UUID(str(payload.get("sub") or ""))
+    except (JWTError, ValueError):
         raise cred_exc
 
-    result = await db.execute(select(User).where(User.id == UUID(user_id)))
+    result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise cred_exc

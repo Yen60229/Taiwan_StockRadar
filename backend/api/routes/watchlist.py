@@ -8,6 +8,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db_session
@@ -44,19 +45,14 @@ async def add_watchlist(
     # 檢查股票是否存在
     stock = (await db.execute(select(Stock).where(Stock.code == payload.stock_code))).scalar_one_or_none()
 
-    # 檢查重複
-    existing = (await db.execute(
-        select(Watchlist).where(and_(
-            Watchlist.user_id == user.id,
-            Watchlist.stock_code == payload.stock_code,
-        ))
-    )).scalar_one_or_none()
-    if existing:
-        raise HTTPException(409, "已在自選清單")
-
+    # 直接 insert，靠 uq_watchlist(user_id, stock_code) 擋重複，避免 check-then-insert race
     item = Watchlist(user_id=user.id, stock_code=payload.stock_code)
     db.add(item)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(409, "已在自選清單")
     await db.refresh(item)
 
     return WatchlistItem(
