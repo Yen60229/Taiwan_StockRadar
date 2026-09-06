@@ -9,6 +9,8 @@
 > - Phase 4 終態不含 Redis 常駐服務,與後端軌的 ARQ/WebSocket 衝突之處以 **ADR-1** 為準
 
 
+> ⚠️ 2026-09 審查註記:實際上線平台已改為 **Oracle Ampere A1(ARM,2C/12G)** 而非 Hetzner;Phase 2 的 image build 需 `buildx --platform linux/arm64`,其餘差異見 [`05-review-2026-09.md`](./05-review-2026-09.md)。
+
 > 前提假設:solo developer、每週 6–10 小時、目前狀態 = 本地 Docker Compose,`docker-compose.prod.yml` + Caddy 已寫好但尚未上線,**沒有 CI、沒有備份、沒有監控、沒有 Alembic migration**。這份路線圖的核心原則是:**先把單台 VPS 營運到「敢睡覺」的程度,再談雲端遷移**。過早跳到 AWS 只會同時學十件事然後全部半途而廢。
 
 ---
@@ -17,7 +19,7 @@
 
 | | (a) VPS | (b) PaaS | (c) Hyperscaler |
 |---|---|---|---|
-| **組合** | Hetzner CX22(2 vCPU/4GB)+ Caddy + Docker Compose;或 Oracle Cloud Free Tier(Ampere A1 4 OCPU/24GB) | Fly.io(API + scheduler machines)或 Railway/Render + **Neon** 或 Supabase Postgres + Cloudflare Pages(前端) | AWS:ECS Fargate + RDS + S3/CloudFront;GCP:**Cloud Run + Cloud SQL**(或 Cloud Run + Neon) |
+| **組合** | Hetzner CX22(2 vCPU/4GB)+ Caddy + Docker Compose;或 Oracle Cloud Free Tier(Ampere A1;**2026-06 起上限 2 OCPU/12GB**,aarch64/ARM) | Fly.io(API + scheduler machines)或 Railway/Render + **Neon** 或 Supabase Postgres + Cloudflare Pages(前端) | AWS:ECS Fargate + RDS + S3/CloudFront;GCP:**Cloud Run + Cloud SQL**(或 Cloud Run + Neon) |
 | **月費估算** | Hetzner ~$4.5 + 官方 snapshot 備份 ~$1 + Storage Box(異地備份)~$4 ≈ **$6–10**;Oracle ≈ **$0**(但隨時可能被回收、台灣連線品質不穩) | Fly.io 2 台 shared-cpu-1x ~$4–8 + Neon Free(0.5GB,夠用一年)$0 或 Launch $19 + Cloudflare $0 ≈ **$5–30**;Railway Hobby ~$5+用量;Render Starter $7 + PG $7 ≈ $14+ | GCP:Cloud Run scale-to-zero ~$0–5 + Cloud SQL 最小實例 ~$10–15 + LB/egress ≈ **$15–35**;AWS:Fargate ~$9 + RDS t4g.micro ~$15 + **ALB ~$18** ≈ **$45–80**(NAT Gateway $32/月是新手最常踩的帳單地雷,務必避開) |
 | **學到什麼** | Linux、systemd、網路、防火牆、備份還原 —— **SRE 基本功** | 12-factor app、health check、release 流程 —— 學得快但底層被抽象掉 | IAM、VPC、managed DB、IaC —— **FAANG 面試最有對話價值** |
 | **維運負擔** | 全部自己扛(OS patch、磁碟、DB) | 幾乎為零 | 中等(IAM/網路設定複雜,但 DB/OS 免管) |
@@ -50,7 +52,7 @@ Phase 1        Phase 2              Phase 3                    Phase 4
 - [ ] **拿掉 prod bind mount**(~半天):刪 `docker-compose.prod.yml:47-49,63-65` 的 `./backend:/app`——prod 必須跑 image 而不是 host 原始碼;dev 用 `docker-compose.override.yml` 保留 bind mount
 - [ ] **鎖住 dev compose**(~半天):`5432`/`8000` 改綁 `127.0.0.1:`,刪掉 `SECRET_KEY:-change-me-in-production` fallback(app 啟動時若無 SECRET_KEY 直接 crash);注意 **Docker 的 iptables 會繞過 UFW**,這是文件沒講的坑
 - [ ] **修 scheduler cron 環境變數 bug**(~1 天):`cron_entry.sh` 的 cron job 拿不到 `DATABASE_URL`(Debian cron 不繼承 daemon env),最小修法是 entrypoint 先 `printenv | grep -E 'DATABASE_URL|RESEND|SECRET' > /etc/environment`;正解是 Phase 2 換掉 cron-in-container
-- [ ] **上線**(~1 週):Hetzner CX22 + UFW + non-root user 照 `docs/deploy-to-vps.md` 走一遍,DNS → Caddy 拿到 Let's Encrypt 憑證,跑 `backfill_history.py`,清掉 `docs/oracle-cloud-automation.md` 裡的真實 Gmail 與 IP(158.179.183.117)
+- [ ] **上線**(~1 週):Hetzner CX22 + UFW + non-root user 照 `docs/deploy-to-vps.md` 走一遍,DNS → Caddy 拿到 Let's Encrypt 憑證,跑 `backfill_history.py`,清掉 `docs/oracle-cloud-automation.md` 裡的真實 Gmail 與 IP(已完成,見 `05-review-2026-09.md`)
 - [ ] **最低限度備份**(~2 天):先不求完美——host crontab 每日 `pg_dump | gzip` 到 `/opt/backups`,保留 14 天,**手動做一次 restore 到本地驗證 dump 可用**
 
 ### 學習重點/資源

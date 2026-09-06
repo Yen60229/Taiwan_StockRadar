@@ -14,16 +14,16 @@
 |---|---|---|
 | 1 | SSH 進新 VM（同一把 ssh key） | Oracle Console → Compute → Instances 看 Public IP |
 | 2 | 裝 Docker + compose plugin，`usermod -aG docker ubuntu` | 官方 convenience script 一行搞定 |
-| 3 | **開 80/443 兩道門**：① Console VCN → Security List 加 Ingress 80/443；② VM 內 `iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT`（443 同）+ `netfilter-persistent save` | Oracle 的 Ubuntu image 內建 iptables 會擋 80/443，**只開 Console 沒用**——這是最多人卡住的坑 |
+| 3 | **開 80/443**：Console VCN → Security List 加 Ingress 80/443（**必做**）。VM 內的 iptables 通常不用動——Docker 發布的 port 走 DOCKER chain，會繞過 Oracle image 預設的 INPUT REJECT 規則；若開完 Security List 仍不通，再補 `iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT`（443 同）+ `netfilter-persistent save` | 最多人卡在忘了開 Security List |
 | 4 | 弄一個網域，A record 指到 VM IP | Caddy 要有網域才能自動拿 HTTPS 憑證；免費用 DuckDNS，便宜買用 Cloudflare |
 | 5 | `git clone` → 建 `.env`（DOMAIN / DB_PASSWORD / SECRET_KEY / TLS_EMAIL） | `.env` 永遠不進 git |
-| 6 | **第一次手動建表**：`docker compose -f docker-compose.prod.yml run --rm api python -c "import asyncio; from models.database import init_db; asyncio.run(init_db())"` | `APP_ENV=production` 時程式會跳過 `init_db()`，不做這步 API 一啟動就炸。正解是 Alembic（藍圖 Phase 1） |
-| 7 | `docker compose -f docker-compose.prod.yml up -d --build` | 用的 base image（python-slim / node-alpine / postgres-alpine / caddy）都有 arm64 版，不用改 |
-| 8 | `backfill_history.py` → `run_now.sh` | 先補 2 個月歷史讓 20 日均量準，再跑當日 |
+| 6 | `bash scripts/deploy.sh --init`（第一次）→ 填 `.env` → 再跑一次 | 會 build、啟動、等 DB 就緒、**自動建表**（prod 不會自己 create_all）。base image 都有 arm64 版，不用改 |
+| 7 | `docker compose -f docker-compose.prod.yml exec api python scripts/backfill_history.py` | 先補 2 個月歷史讓 20 日均量準 |
+| 8 | 跑一次清理 SQL（`05-review-2026-09.md` 附錄）→ `SKIP_EMAIL=1 sh scripts/run_now.sh` | 先清掉舊的週末污染列，再跑當日；測試跑加 `SKIP_EMAIL=1` 才不會寄週報給訂閱者 |
 | 9 | 驗收：瀏覽器開 `https://你的網域`、`/api/screen` 有資料、`docker compose ps` 全 Up | |
 | 10 | 收尾：搶機用的跳板 VM 可留（不花錢）或刪；把 `docs/oracle-cloud-automation.md` 裡的真實 IP / Gmail 清掉 | 公開 repo 不放個資 |
 
-**上線後第一個週末要確認**：週六 08:00 的排程是否真的寫入 DB（查 `daily_quotes` 的 `max(trade_date)`）。藍圖 P0-1 指出 scheduler 的 cron 拿不到環境變數，**很可能會失敗**——沒寫入就先修那個 bug（見 Step 4）。
+**上線後第一個週末要確認**：週六 08:00 的排程是否真的寫入 DB，且 `max(trade_date)` 是**週五**不是週六（P0-1 cron 環境變數與 P0-2 週末日期都已修，這是驗收）。
 
 **學習資源**
 - Docker 安裝：docs.docker.com/engine/install/ubuntu
@@ -93,13 +93,12 @@ FROM ownership_ratios;
 
 ## Step 4｜接回 1–2 年藍圖 Phase 1
 
-上面三步做完，回到 `01-backend.md` / `03-cloud-devops.md` 的 Phase 1。**跟「已上線」最直接相關、建議最先修的三個 P0**：
+P0-1（cron 環境變數）、P0-2（週末日期）、P0-3（SECRET_KEY）、P0-4（prod 建表）、P0-5（race / UUID / bcrypt）、P0-7（bind mount / root / port）**已在 2026-09 的 Batch A 修掉**（見 `05-review-2026-09.md`）。剩下照藍圖順序：
 
-1. **scheduler cron 拿不到環境變數**（P0-1）——不修，週末自動排程等於沒有；`cron_entry.sh` 開頭 `printenv | grep -E 'DATABASE_URL|RESEND|SMTP|EMAIL' > /etc/environment` 是最小修法
-2. **非交易日 `date.today()` 污染時序表**（P0-2）——改用 API 回傳的交易日期
-3. **`SECRET_KEY` 有 `change-me` fallback**（P0-3）——沒設就拒絕啟動
-
-然後才是 Alembic、pytest、CI、備份——順序照藍圖走，不要跳。
+1. pytest 地基 + GitHub Actions CI（P0-6）→ 之後才換 python-jose → PyJWT（ADR-11）
+2. Alembic baseline，`deploy.sh` 改 `alembic upgrade head`
+3. 備份 + 一次 restore 演練（P0-8，ADR-10 上線 gate）
+4. Oracle 帳戶升級 Pay-As-You-Go 或明確接受 idle reclaim 風險（藍圖漏掉的）
 
 ---
 
@@ -109,7 +108,7 @@ FROM ownership_ratios;
 Week 1–2   上線 Ampere（Docker / 開 port / 網域 / Caddy / 建表 / backfill）
 Week 3     Dashboard 加買賣超欄位 → 外資持股改證交所每日 → 投信持股（FinMind 試水）
 Week 4–5   融資餘額 scraper + 表 + 個股頁主圖 / 副圖
-Week 6+    藍圖 Phase 1 P0（cron env / 交易日 / SECRET_KEY）→ Alembic → pytest → CI → 備份
+Week 6+    藍圖 Phase 1 剩餘：pytest + CI → PyJWT → Alembic → 備份/restore 演練
 ```
 
 *建立：2026-08*

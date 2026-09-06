@@ -137,8 +137,9 @@ Takes about 20–30 minutes. You'll see `✅ Done` at the end.
 ## 7. Verify
 
 ```bash
-curl https://your-domain.com/healthz
-# Expected: {"status": "ok"}
+curl https://your-domain.com/api/health
+# Expected: {"status": "ok", "db": true, "timestamp": "..."}
+# (Do NOT use /healthz here: behind Caddy it hits nginx's SPA fallback and always returns 200)
 ```
 
 Open `https://your-domain.com` in a browser — you should see the dashboard.

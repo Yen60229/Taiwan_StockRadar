@@ -13,7 +13,7 @@
 本地 Windows
     │ SSH
     ▼
-E2.1.Micro VM (158.179.183.117) ← 已建立的免費 VM，做跳板
+E2.1.Micro VM (<跳板VM_PUBLIC_IP>) ← 已建立的免費 VM，做跳板
     │
     ├─ OCI CLI（已安裝）
     ├─ ociauto.sh（Shell 腳本）
@@ -104,7 +104,7 @@ for i in $(seq 1 20); do
   log "Job $JOB_ID status: $STATUS"
   if [ "$STATUS" = "SUCCEEDED" ]; then
     # 成功 → 寄信 → 移除 cron
-    echo "Subject: StockRadar Ampere VM 建立成功！" | msmtp jimmy880830@gmail.com
+    echo "Subject: StockRadar Ampere VM 建立成功！" | msmtp you@gmail.com
     crontab -r
     exit 0
   elif [ "$STATUS" = "FAILED" ]; then
@@ -160,13 +160,13 @@ port 587
 tls on
 tls_starttls on
 auth on
-user jimmy880830@gmail.com
+user you@gmail.com
 password YOUR_16_CHAR_APP_PASSWORD    # Gmail App Password（非登入密碼）
-from jimmy880830@gmail.com
+from you@gmail.com
 logfile ~/.msmtp.log
 
 # 發送測試信
-echo "Subject: 測試" | msmtp jimmy880830@gmail.com
+echo "Subject: 測試" | msmtp you@gmail.com
 ```
 
 **Gmail App Password 說明**：需在 Google 帳戶 → 安全性 → 兩步驟驗證開啟後，才能建立「應用程式密碼」（16 碼），用於第三方 SMTP 工具。
@@ -182,7 +182,7 @@ echo "Subject: 測試" | msmtp jimmy880830@gmail.com
 scp -i /d/User/Downloads/ssh-key-2026-05-09.key \
     ~/.oci/config \
     ~/.oci/oci_api_key.pem \
-    ubuntu@158.179.183.117:~/.oci/
+    ubuntu@<跳板VM_PUBLIC_IP>:~/.oci/
 ```
 
 ---

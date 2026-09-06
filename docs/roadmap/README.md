@@ -13,6 +13,7 @@
 | [`02-frontend.md`](./02-frontend.md) | 前端路線圖(工程基線 → 表格重構/虛擬化 → Auth 安全 → 圖表/RWD/a11y → 產品化) |
 | [`03-cloud-devops.md`](./03-cloud-devops.md) | 雲端架構與 DevOps 路線圖 + 學習地圖(VPS → CI/CD/備份/監控 → Terraform/Neon → Cloud Run) |
 | [`04-critical-review.md`](./04-critical-review.md) | 21 條跨軌審查修正的完整原文(本文件 ADR 的依據) |
+| [`05-review-2026-09.md`](./05-review-2026-09.md) | 2026-09 對照程式碼的逐項驗證:P0 全屬實、11 處錯誤/不完整、5 處遺漏;Batch A 已修項目與清理 SQL |
 
 **衝突裁決順序:本文件的 ADR > 三份單軌文件。** 單軌文件內的工時估計是「單軌獨立」視角,實際排程一律以本文件的整合時間表為準。
 
