@@ -1,14 +1,19 @@
-# StockRadar Backend — 真正的 multi-stage build
-#   Stage 1 builder : 只做 pip install，產物放獨立 prefix
+# StockRadar Backend — multi-stage build
+#   Stage 1 builder : 裝編譯工具鏈 + pip install，產物放獨立 prefix
 #   Stage 2 runtime : 不含編譯工具鏈、以 non-root 執行、附 HEALTHCHECK
-# 所有依賴都提供 manylinux wheel（x86_64 與 aarch64/Ampere 皆有），
-# 因此不需要 build-essential / libpq-dev（psycopg2 已移除，全程 asyncpg）。
+# 多數依賴都提供 manylinux wheel（x86_64 與 aarch64/Ampere 皆有），
+# 但少數（如 yfinance 的 peewee）只發佈 sdist，需要 gcc，故 builder 仍裝 build-essential。
+# psycopg2 已移除（全程 asyncpg），因此不需要 libpq-dev。
 
 # ── Stage 1: builder ──────────────────────────────────────────
 FROM python:3.12-slim AS builder
 
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 COPY requirements.txt .
