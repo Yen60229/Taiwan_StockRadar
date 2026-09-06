@@ -93,14 +93,13 @@ FROM ownership_ratios;
 
 ---
 
-## Step 4｜接回 1–2 年藍圖 Phase 1
+## Step 4｜P0 全部清完之後
 
-P0-1（cron 環境變數）、P0-2（週末日期）、P0-3（SECRET_KEY）、P0-4（prod 建表）、P0-5（race / UUID / bcrypt）、P0-7（bind mount / root / port）**已在 2026-09 的 Batch A 修掉**（見 `05-review-2026-09.md`）。剩下照藍圖順序：
+8 個 P0 已於 2026-09-07 全數完成（見 `05-review-2026-09.md`）：70 個離線測試 + CI 四個 job、備份與還原演練（RTO 3 秒）、平日 18:00 全市場更新。
 
-1. pytest 地基 + GitHub Actions CI（P0-6）→ 之後才換 python-jose → PyJWT（ADR-11）
-2. Alembic baseline，`deploy.sh` 改 `alembic upgrade head`
-3. 備份 + 一次 restore 演練（P0-8，ADR-10 上線 gate）
-4. Oracle 帳戶升級 Pay-As-You-Go 或明確接受 idle reclaim 風險（藍圖漏掉的）
+**下一個工作項目：[`06-auth-hardening.md`](./06-auth-hardening.md)**——站台目前「知道網址就連得到」，API 端沒有門。依該文件的 M0 → M1 → M2 → M3 進行；M0 順便把 Phase 1 欠著的 Alembic 與 DB 測試地基補上。
+
+其後照藍圖 Phase 2：python-jose → PyJWT（ADR-11）、異地備份（R2）、監控。
 
 ---
 
@@ -110,7 +109,7 @@ P0-1（cron 環境變數）、P0-2（週末日期）、P0-3（SECRET_KEY）、P0
 Week 1–2   上線 Ampere（Docker / 開 port / 網域 / Caddy / 建表 / backfill）
 Week 3     Dashboard 加買賣超欄位 → 外資持股改證交所每日 → 投信持股（FinMind 試水）
 Week 4–5   融資餘額 scraper + 表 + 個股頁主圖 / 副圖
-Week 6+    藍圖 Phase 1 剩餘：pytest + CI → PyJWT → Alembic → 備份/restore 演練
+Week 6+    06-auth-hardening：M0 Alembic + DB 測試 → M1 關門(核准制) → M2 管理員 2FA → M3 rate limit
 ```
 
 *建立：2026-08*
