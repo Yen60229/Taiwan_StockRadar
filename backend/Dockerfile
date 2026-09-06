@@ -43,7 +43,7 @@ EXPOSE 8000
 
 # /api/health 會 SELECT 1，DB 掛了會回 503 → container unhealthy
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD curl -fsS http://localhost:8000/api/health || exit 1
+    CMD curl -fsS http://127.0.0.1:8000/api/health || exit 1
 
 # API 以 non-root 執行。
 # scheduler 因為 cron daemon 需要 root，在 docker-compose 以 `user: root` 覆寫。
