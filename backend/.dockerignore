@@ -1,0 +1,14 @@
+# 不進 image 的東西：本機 venv、快取、log、機密、測試
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+logs/
+*.log
+.env
+.env.*
+tests/
+.git/

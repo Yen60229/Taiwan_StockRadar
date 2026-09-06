@@ -4,12 +4,12 @@
 #   首次部署：bash scripts/deploy.sh --init
 #   日後更新：bash scripts/deploy.sh
 #
-# 執行環境：Ubuntu 22.04 VPS（Hetzner 等）
+# 執行環境：Ubuntu 22.04 VPS（Oracle Ampere A1 / Hetzner 等，x86_64 與 arm64 皆可）
 # 依賴：Docker >= 24、Docker Compose v2、git
 
 set -euo pipefail
 
-REPO_URL="https://github.com/YOUR_USERNAME/stockradar.git"   # ← 改成你的 GitHub repo
+REPO_URL="https://github.com/Yen60229/Taiwan_StockRadar.git"
 APP_DIR="/opt/stockradar"
 COMPOSE_FILE="docker-compose.prod.yml"
 
@@ -99,6 +99,13 @@ deploy() {
         [ "$i" -eq 30 ] && die "資料庫 30 秒後仍未就緒"
         sleep 2
     done
+
+    # APP_ENV=production 時 API 啟動不會建表；這裡跑一次 create_all（冪等）。
+    # Alembic 導入後這行改成：docker compose run --rm api alembic upgrade head
+    log "建立 / 確認資料表..."
+    docker compose -f "$COMPOSE_FILE" run --rm --no-deps api \
+        python -c "import asyncio; from models.database import init_db; asyncio.run(init_db())" \
+        && ok "資料表就緒" || die "建表失敗，請看上方錯誤"
 
     log "確認服務狀態..."
     docker compose -f "$COMPOSE_FILE" ps

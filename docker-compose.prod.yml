@@ -6,6 +6,9 @@
 #   2. frontend port 3000 改為內部，由 Caddy 接手
 #   3. 新增 Caddy 反向代理（自動 HTTPS + Let's Encrypt）
 #   4. APP_ENV=production（關閉 debug、啟用快取）
+#   5. 不掛 ./backend bind mount：prod 跑的是 image 裡的程式碼，不是宿主機原始碼
+#   6. 資料表建立：APP_ENV=production 時 API 不會 create_all，
+#      由 scripts/deploy.sh 在啟動後執行一次 init_db()（Alembic 導入前的過渡做法）
 #
 # 必要前置：
 #   - 在 VPS 上建好 .env（參考 .env.example）
@@ -45,13 +48,15 @@ services:
       APP_ENV: production
       TZ: Asia/Taipei
     volumes:
-      - ./backend:/app
       - ./logs:/app/logs
-    # 生產環境不對外暴露 8000，由 Caddy 代理
+    # 生產環境不對外暴露 8000，由 Caddy 代理；healthcheck 定義在 image（curl /api/health）
 
   scheduler:
     build: ./backend
     restart: unless-stopped
+    user: root            # cron daemon 需要 root（image 預設 USER app）
+    healthcheck:
+      disable: true       # 不跑 uvicorn，image 的 HEALTHCHECK 不適用
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,9 +64,9 @@ services:
       DATABASE_URL: postgresql://stockradar:${DB_PASSWORD}@postgres:5432/stockradar
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-report@stockradar.tw}
+      EMAIL_ADMIN: ${EMAIL_ADMIN:-}
       TZ: Asia/Taipei
     volumes:
-      - ./backend:/app
       - ./logs:/app/logs
     command: ["sh", "/app/scripts/cron_entry.sh"]
 
@@ -84,8 +89,10 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - frontend
-      - api
+      api:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
 
 volumes:
   pg_data:

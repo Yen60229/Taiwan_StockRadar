@@ -10,7 +10,7 @@ services:
     volumes:
       - pg_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"   # 只綁本機：Docker 發布的 port 會繞過 UFW/防火牆
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U stockradar"]
       interval: 10s
@@ -24,14 +24,14 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://stockradar:${DB_PASSWORD:-stockradar_dev_pw}@postgres:5432/stockradar
-      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY 未設定，請在 .env 填入（openssl rand -base64 48）}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-report@stockradar.tw}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       APP_ENV: ${APP_ENV:-development}
       TZ: Asia/Taipei
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./backend:/app
       - ./logs:/app/logs
@@ -39,6 +39,9 @@ services:
   scheduler:
     build: ./backend
     restart: unless-stopped
+    user: root            # cron daemon 需要 root（image 預設 USER app）
+    healthcheck:
+      disable: true       # 這個 container 不跑 uvicorn，image 的 HEALTHCHECK 不適用
     depends_on:
       postgres:
         condition: service_healthy
