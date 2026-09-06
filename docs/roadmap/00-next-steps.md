@@ -23,7 +23,9 @@
 | 9 | 驗收：瀏覽器開 `https://你的網域`、`/api/screen` 有資料、`docker compose ps` 全 Up | |
 | 10 | 收尾：搶機用的跳板 VM 可留（不花錢）或刪；把 `docs/oracle-cloud-automation.md` 裡的真實 IP / Gmail 清掉 | 公開 repo 不放個資 |
 
-**上線後第一個週末要確認**：週六 08:00 的排程是否真的寫入 DB，且 `max(trade_date)` 是**週五**不是週六（P0-1 cron 環境變數與 P0-2 週末日期都已修，這是驗收）。
+**上線後要確認的排程**（P0-1 cron 環境變數與 P0-2 週末日期都已修，這是驗收）：
+- 平日 18:00 的 `run_daily.sh` 有更新當日行情與法人（查 `daily_quotes` 的 `max(trade_date)`）
+- 週六 10:00 的完整 pipeline 有寫入籌碼，且 `max(trade_date)` 是**週五**不是週六
 
 **學習資源**
 - Docker 安裝：docs.docker.com/engine/install/ubuntu

@@ -64,7 +64,7 @@ Phase 1        Phase 2              Phase 3                    Phase 4
 - `https://<domain>/api/health` 回 200,`docker compose ps` 全部 healthy
 - `docker inspect` 顯示 api/scheduler 以 non-root 跑;backend image < 500MB(現在推估 ~1GB)
 - 全新 VPS 上 `deploy.sh --init` 一鍵可重建整個系統(含 Alembic 建表),**不需要任何手動 SQL**
-- 週六 08:00 的 cron pipeline 實際成功寫入 DB(檢查 `daily_quotes` 的 max(date))
+- 排程實際成功寫入 DB(檢查 `daily_quotes` 的 max(date)):平日 18:00 行情、週六 10:00 完整 pipeline
 - 你在本地成功從備份 dump 還原出完整資料庫一次
 
 ---

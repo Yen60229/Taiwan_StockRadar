@@ -25,8 +25,8 @@ chmod 600 /etc/stockradar.env
 # ── 排程（Asia/Taipei）────────────────────────────────────────
 #   平日 18:00  行情 + 三大法人 + 均量（快，約 1–3 分鐘）
 #               18:00 是安全邊際：13:30 收盤、行情約 15:00 更新、T86 約 16:00 後公布
-#   週六 08:00  完整 pipeline（TDCC 集保籌碼 + 持股比例）+ 寄週報
-#   週日 08:00  完整 pipeline 補跑，SKIP_EMAIL=1 避免訂閱者一週收到兩封
+#   週六 10:00  完整 pipeline（TDCC 集保籌碼 + 持股比例）+ 寄週報
+#   週日 10:00  完整 pipeline 補跑，SKIP_EMAIL=1 避免訂閱者一週收到兩封
 #
 # ⚠️ 不要再 `crontab /etc/cron.d/stockradar`：cron.d 格式含 user 欄位，
 #    裝進 user crontab 會把 "root" 當指令執行，而且同一時間雙重觸發。
@@ -36,15 +36,15 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 TZ=Asia/Taipei
 
 0 18 * * 1-5 root bash /app/scripts/run_daily.sh
-0 8 * * 6 root sh /app/scripts/run_scheduled.sh
-0 8 * * 0 root SKIP_EMAIL=1 sh /app/scripts/run_scheduled.sh
+0 10 * * 6 root sh /app/scripts/run_scheduled.sh
+0 10 * * 0 root SKIP_EMAIL=1 sh /app/scripts/run_scheduled.sh
 EOF
 chmod 0644 /etc/cron.d/stockradar
 
 echo "🕐 cron 已啟動（Asia/Taipei）："
 echo "   平日 18:00  行情 + 三大法人 + 均量"
-echo "   週六 08:00  完整 pipeline + 週報"
-echo "   週日 08:00  完整 pipeline（不寄信）"
+echo "   週六 10:00  完整 pipeline + 週報"
+echo "   週日 10:00  完整 pipeline（不寄信）"
 echo "📋 手動執行："
 echo "   行情：docker compose exec scheduler bash /app/scripts/run_daily.sh"
 echo "   完整：docker compose exec -e SKIP_EMAIL=1 scheduler sh /app/scripts/run_now.sh"
