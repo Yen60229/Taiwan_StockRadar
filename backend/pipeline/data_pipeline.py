@@ -11,7 +11,7 @@ StockRadar - 資料清洗 / 合併 / 寫入 PostgreSQL Pipeline
 """
 import asyncio
 import logging
-from datetime import date
+from datetime import date, datetime
 from typing import Optional
 
 import pandas as pd
@@ -29,6 +29,19 @@ logger = logging.getLogger(__name__)
 MIN_AVG_VOL   = 2000   # 日均量門檻（張）
 MIN_CHIP_CONC = 40.0   # 籌碼集中度門檻（%）
 AVG_VOL_DAYS  = 20     # 均量計算天數（近 N 個有開盤的交易日）
+
+
+def _row_trade_date(row, fallback: Optional[date]) -> date:
+    """
+    取一列的交易日：優先用 scraper 從 payload 解析出的 row["trade_date"]，
+    沒有才用呼叫端指定的 fallback；兩者皆無就 raise，絕不默默用今日日期。
+    """
+    v = row.get("trade_date")
+    if v is None or pd.isna(v):
+        if fallback is None:
+            raise ValueError(f"[DB] {row.get('code') or row.get('stock_code')} 缺少 trade_date")
+        return fallback
+    return v.date() if isinstance(v, (pd.Timestamp, datetime)) else v
 
 
 # ── 0. 從 DB 計算近 N 日均量 ─────────────────────────────────
@@ -185,7 +198,12 @@ async def upsert_daily_quotes(
     if df.empty:
         return 0
 
-    td = trade_date or date.today()
+    # P0-2：以前這裡一律 date.today()，把 scraper 算好的交易日整個蓋掉，
+    # 週末跑就寫進週六/週日的假日期。現在逐列尊重 row["trade_date"]。
+    has_row_dates = "trade_date" in df.columns and df["trade_date"].notna().any()
+    if trade_date is None and not has_row_dates:
+        logger.warning("[DB] daily_quotes 無 trade_date 可用，fallback 今日日期（可能非交易日！）")
+        trade_date = date.today()
     count = 0
 
     for _, row in df.iterrows():
@@ -206,7 +224,7 @@ async def upsert_daily_quotes(
             """),
             {
                 "code":  row["code"],
-                "date":  td,
+                "date":  _row_trade_date(row, trade_date),
                 "open":  _safe_float(row.get("open")),
                 "high":  _safe_float(row.get("high")),
                 "low":   _safe_float(row.get("low")),
@@ -247,7 +265,7 @@ async def upsert_institutional_flow(
             """),
             {
                 "code":    row["code"],
-                "date":    row.get("trade_date", date.today()),
+                "date":    _row_trade_date(row, None),
                 "foreign": _safe_int(row.get("foreign_net")),
                 "trust":   _safe_int(row.get("trust_net")),
                 "dealer":  _safe_int(row.get("dealer_net")),

@@ -52,9 +52,32 @@ RETRY_COUNT = 3
 RETRY_DELAY = 5            # 秒
 
 HEADERS = {
-    "User-Agent": "StockRadar/1.0 (github.com/yourname/stockradar)",
+    "User-Agent": "StockRadar/1.0 (github.com/Yen60229/Taiwan_StockRadar)",
     "Accept": "application/json",
 }
+
+
+# ── 日期工具 ──────────────────────────────────────────────────
+def _roc_to_date(roc: str) -> Optional[date]:
+    """民國日期字串（如 '1150904'）→ date；解析失敗回 None"""
+    try:
+        s = str(roc).strip()
+        return date(int(s[:-4]) + 1911, int(s[-4:-2]), int(s[-2:]))
+    except (ValueError, TypeError):
+        return None
+
+
+def _payload_trade_date(df: pd.DataFrame, source: str) -> date:
+    """
+    從 payload 的 Date 欄取交易日。
+    刻意不 fallback 到 date.today()：假日執行時 today() 不是交易日，
+    寫進去就是污染時序表（P0-2），寧可讓 pipeline 失敗。
+    """
+    if "Date" in df.columns and len(df):
+        d = _roc_to_date(df["Date"].iloc[0])
+        if d:
+            return d
+    raise ValueError(f"[{source}] 行情 payload 缺少可解析的 Date 欄位，拒絕以今日日期寫入")
 
 
 # ── HTTP 工具 ─────────────────────────────────────────────────
@@ -112,7 +135,8 @@ async def fetch_all_quotes(client: httpx.AsyncClient) -> pd.DataFrame:
         )
         df["volume"] = (df["volume_shares"] / 1000).round(0).astype("Int64")  # 股 → 張
 
-    df["trade_date"] = date.today()
+    # 交易日以 payload 的 Date 為準（非 date.today()）：週末跑到的是週五資料
+    df["trade_date"] = _payload_trade_date(df, "TWSE")
     df["market"] = "TWSE"
 
     # 只保留普通股（代號為 4 位數字）

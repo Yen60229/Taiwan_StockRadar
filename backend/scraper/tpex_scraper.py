@@ -111,7 +111,10 @@ async def fetch_all_quotes(client: httpx.AsyncClient) -> pd.DataFrame:
         )
         df["volume"] = (df["volume_shares"] / 1000).round(0).astype("Int64")
 
-    df["trade_date"] = date.today()
+    # 交易日以 payload 的 Date 為準（非 date.today()），假日執行不污染時序表
+    if "Date" not in df.columns or df.empty:
+        raise ValueError("[TPEX] 行情 payload 缺少 Date 欄位，拒絕以今日日期寫入")
+    df["trade_date"] = _roc_to_date(str(df["Date"].iloc[0]))
     df["market"] = "TPEX"
 
     # 只保留 4~5 位數代號的普通股
@@ -136,14 +139,12 @@ _TOTAL_DIFF  = "TotalDifference"
 
 
 def _roc_to_date(roc_str: str) -> date:
-    """民國年字串（如 '1150508'）→ Python date"""
+    """民國年字串（如 '1150508'）→ Python date；解析失敗 raise，不再 fallback 到今日"""
     try:
-        roc_year = int(roc_str[:3])
-        month    = int(roc_str[3:5])
-        day      = int(roc_str[5:7])
-        return date(roc_year + 1911, month, day)
-    except (ValueError, IndexError):
-        return date.today()
+        s = str(roc_str).strip()
+        return date(int(s[:-4]) + 1911, int(s[-4:-2]), int(s[-2:]))
+    except (ValueError, IndexError, TypeError):
+        raise ValueError(f"[TPEX] 無法解析民國日期：{roc_str!r}")
 
 
 def _to_lots(v) -> float | None:

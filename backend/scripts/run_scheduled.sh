@@ -1,6 +1,8 @@
 #!/bin/sh
 # StockRadar - 排程執行（cron / scheduler container 用）
 set -e
+# cron job 拿不到容器環境變數（P0-1）：由 cron_entry.sh 匯出到這個檔案
+[ -f /etc/stockradar.env ] && . /etc/stockradar.env
 cd /app
 mkdir -p logs
 LOG="logs/scheduled_$(date '+%Y%m%d').log"
