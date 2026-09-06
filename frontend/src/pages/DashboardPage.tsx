@@ -83,7 +83,7 @@ export default function DashboardPage() {
   }, [screen?.items, search, market, sort]);
 
   const exportCSV = () => {
-    const header = ["代號","名稱","市場","產業","收盤","均量(張)","籌碼集中度%","外資持股%","大戶籌碼%","董監持股%"];
+    const header = ["代號","名稱","市場","產業","收盤","均量(張)","籌碼集中度%","外資持股%","大戶籌碼%","董監持股%","外資買賣超(張)","投信買賣超(張)"];
     const rows = items.map(s => {
       const forHold = s.foreign_hold_ratio != null ? Number(s.foreign_hold_ratio) : null;
       const conc    = s.conc_ratio != null ? Number(s.conc_ratio) : null;
@@ -95,6 +95,8 @@ export default function DashboardPage() {
         forHold != null ? forHold.toFixed(2) : "",
         bigChip,
         s.director_hold_ratio != null ? Number(s.director_hold_ratio).toFixed(2) : "",
+        s.foreign_net != null ? Math.round(Number(s.foreign_net)) : "",
+        s.trust_net   != null ? Math.round(Number(s.trust_net))   : "",
       ];
     });
     const csv = "﻿" + [header, ...rows].map(r => r.join(",")).join("\n");
@@ -215,7 +217,8 @@ export default function DashboardPage() {
   );
 }
 
-// ── 欄位定義（移除投信持股）────────────────────────────────
+// ── 欄位定義 ─────────────────────────────────────────────
+// group: 0 基本 / 1 行情 / 2 籌碼 / 3 法人買賣超 / 4 關注
 const COLS = [
   { key:"code",                label:"代號",      sub:"",   align:"left"   as const, width:72,  group:0, sortable:true  },
   { key:"name",                label:"名稱",      sub:"",   align:"left"   as const, width:148, group:0, sortable:false },
@@ -226,11 +229,13 @@ const COLS = [
   { key:"foreign_hold_ratio",  label:"外資持股",  sub:"%",  align:"right"  as const, width:92,  group:2, sortable:true  },
   { key:"big_chip",            label:"大戶籌碼",  sub:"%",  align:"right"  as const, width:92,  group:2, sortable:true  },
   { key:"director_hold_ratio", label:"董監持股",  sub:"%",  align:"right"  as const, width:92,  group:2, sortable:true  },
-  { key:"watchlist",           label:"",          sub:"",   align:"center" as const, width:52,  group:3, sortable:false },
+  { key:"foreign_net",         label:"外資買賣超", sub:"張", align:"right"  as const, width:104, group:3, sortable:true  },
+  { key:"trust_net",           label:"投信買賣超", sub:"張", align:"right"  as const, width:104, group:3, sortable:true  },
+  { key:"watchlist",           label:"",          sub:"",   align:"center" as const, width:52,  group:4, sortable:false },
 ];
 
 // 每個 group 的左邊起始欄加粗分隔線
-const GROUP_START = new Set([3, 5, 9]); // close, conc_ratio, watchlist
+const GROUP_START = new Set([3, 5, 9, 11]); // close, conc_ratio, foreign_net, watchlist
 
 // ── Table ────────────────────────────────────────────────
 function ResizableTable({ items, onRowClick, onToggleWl, sort, onSort }: {
@@ -323,6 +328,8 @@ function ResizableTable({ items, onRowClick, onToggleWl, sort, onSort }: {
           const conc    = s.conc_ratio != null ? Number(s.conc_ratio) : null;
           const bigChip = conc != null && forHold != null ? Math.max(0, Number((conc - forHold).toFixed(2))) : null;
           const dirHold = s.director_hold_ratio != null ? Number(s.director_hold_ratio) : null;
+          const fNet    = s.foreign_net != null ? Number(s.foreign_net) : null;
+          const tNet    = s.trust_net   != null ? Number(s.trust_net)   : null;
           const isHov   = hovered === s.code;
           const isEven  = rowIdx % 2 === 1;
 
@@ -398,6 +405,17 @@ function ResizableTable({ items, onRowClick, onToggleWl, sort, onSort }: {
                 <PctTag value={dirHold} color="#ffcc00" bg="rgba(255,204,0,.10)" border="rgba(255,204,0,.38)" />
               </td>
 
+              {/* 外資買賣超 — group start */}
+              <td onClick={() => onRowClick(s.code)}
+                  style={{ ...tdc("right", true), borderLeft:"2px solid rgba(0,150,255,.18)" }}>
+                <NetTag value={fNet} />
+              </td>
+
+              {/* 投信買賣超 */}
+              <td onClick={() => onRowClick(s.code)} style={tdc("right", true)}>
+                <NetTag value={tNet} />
+              </td>
+
               {/* 關注 — group start */}
               <td style={{ ...tdc("center", false), borderLeft:"2px solid rgba(0,150,255,.18)" }}>
                 <button
@@ -458,6 +476,18 @@ function PctTag({ value, color, bg, border }: { value: number | null; color: str
       letterSpacing:".01em",
     }}>
       {value.toFixed(2)}%
+    </span>
+  );
+}
+
+// ── 法人買賣超（張；台股慣例紅漲綠跌：買超紅、賣超綠）──────────
+function NetTag({ value }: { value: number | null }) {
+  if (value == null) return <Dash />;
+  const v = Math.round(value);
+  const color = v > 0 ? "#ff5a5a" : v < 0 ? "#00e49a" : "#6a8aaa";
+  return (
+    <span style={{ fontFamily:"var(--font-mono)", fontSize:13.5, fontWeight:700, color, letterSpacing:".01em" }}>
+      {v > 0 ? "+" : ""}{v.toLocaleString()}
     </span>
   );
 }
