@@ -132,8 +132,9 @@ done
 # 編輯 crontab
 crontab -e
 
-# 每 2 分鐘執行一次腳本，stderr 導入同一 log
-*/2 * * * * /bin/bash /home/ubuntu/ociauto.sh >> /home/ubuntu/ociauto.log 2>&1
+# 每 10 分鐘執行一次腳本，stderr 導入同一 log
+# （間隔太短會觸發 429 TooManyRequests，10 分鐘為實測穩定值）
+*/10 * * * * /bin/bash /home/ubuntu/ociauto.sh >> /home/ubuntu/ociauto.log 2>&1
 ```
 
 確認排程已生效：
@@ -206,13 +207,101 @@ scp -i /d/User/Downloads/ssh-key-2026-05-09.key \
 
 ---
 
+## 7. 2026-06 政策異動：Always Free 規格上限調降
+
+2026 年 6 月，Oracle 調整 Always Free Resources 政策，  
+Ampere A1 (ARM) 免費上限從 **4 OCPU + 24 GB** 降為 **2 OCPU + 12 GB**。
+
+原本的 Stack Terraform 設定如果寫死 4/24，搶到也會因超過上限而失敗，  
+必須把規格調整到新上限內（這裡直接升到滿配 2/12）。
+
+### 透過 CLI 修改 Stack 的 Terraform 設定（免進 Console）
+
+Stack 的 OCPU/記憶體是寫死在 `main.tf` 的 `shape_config`，**不是變數**，  
+所以無法用 `--variables` 改，必須下載 → 改 `.tf` → 重新打包上傳。
+
+```bash
+# ① 下載 Stack 目前的 Terraform 設定
+oci resource-manager stack get-stack-tf-config \
+  --stack-id "$STACK_ID" --file ~/stack.zip
+
+# ② 解開
+mkdir -p ~/stack_tf && cd ~/stack_tf && unzip -o ~/stack.zip
+
+# ③ 確認 shape_config 位置
+grep -n "ocpus\|memory_in_gbs" ~/stack_tf/main.tf
+#   main.tf:  memory_in_gbs = "6"
+#   main.tf:  ocpus = "1"
+
+# ④ 改成新上限 2 OCPU / 12 GB
+sed -i 's/memory_in_gbs = "6"/memory_in_gbs = "12"/' ~/stack_tf/main.tf
+sed -i 's/ocpus = "1"/ocpus = "2"/'                 ~/stack_tf/main.tf
+
+# ⑤ 從資料夾「內部」重新打包（main.tf 必須在 zip 根目錄）
+cd ~/stack_tf && zip -r ~/stack_new.zip .
+
+# ⑥ 上傳更新 Stack（--config-source 只吃 .zip，不吃資料夾）
+oci resource-manager stack update \
+  --stack-id "$STACK_ID" \
+  --config-source ~/stack_new.zip --force
+```
+
+**關鍵學習點**：
+
+| 問題 | 原因 | 解法 |
+|---|---|---|
+| Stack 規格無法用 `--variables` 改 | OCPU/記憶體寫死在 `main.tf` | 下載 `.tf` → `sed` 改 → 重新上傳 |
+| `Config source must be a .zip file` | `--config-source` 指向資料夾 | 先 `zip -r` 打包成 .zip |
+| `main.tf` 跑到 zip 子資料夾裡 | 打包外層資料夾 | `cd` 進資料夾再 `zip -r out.zip .` |
+
+### 如何分辨「設定錯」與「缺貨」
+
+改完後手動跑一次，看 Job 的 Terraform log：
+
+```bash
+oci resource-manager job get-job-logs --job-id "$JOB_ID" \
+  --query 'data[*].message' --raw-output | tail -25
+```
+
+| Log 訊息 | 意義 | 動作 |
+|---|---|---|
+| `CannotParseRequest (400)` | 請求格式錯（欄位、shape-config）| 必須修設定 |
+| `Plan: 1 to add` + `Out of host capacity (500)` | **設定全對，只差有貨** | 繼續輪詢搶 |
+
+看到 `Plan: 1 to add` 才代表 Terraform 驗證通過，  
+`Out of host capacity` 是最理想的失敗——只要持續搶就會成功。
+
+---
+
+## 整體流程圖
+
+```
+[本機 Windows]
+  └─ 建立 Oracle E2.1.Micro VM（Tokyo）
+  └─ SCP 上傳 OCI 憑證
+  └─ SSH 進 VM，安裝 OCI CLI + msmtp
+
+[E2.1.Micro VM 持續運行（搶機伺服器）]
+  └─ cron 每 10 分鐘觸發 ociauto.sh
+       └─ 呼叫 OCI Resource Manager Stack Apply Job（建 2C/12G Ampere）
+       └─ 輪詢 Job 狀態
+            ├─ FAILED（Out of capacity）→ 等下次 cron
+            └─ SUCCEEDED（搶到！）
+                 └─ msmtp 寄 Gmail 通知
+                 └─ crontab -r 自動停止排程
+```
+
+---
+
 ## 心得
 
 - Oracle Always Free 的 Ampere A1 VM 在熱門地區長期缺貨，**輪詢搶機是目前社群最常見的合法解法**
 - 全程使用免費資源（E2.1.Micro 跳板 VM + cron），搶到後整個 Always Free 方案仍維持 $0
 - 這次實作深化了對 **Linux cron 環境限制**、**OCI CLI API 呼叫**、**Terraform 託管** 的理解
+- 雲端供應商的免費方案規格會異動（2026-06 從 4/24 降到 2/12），  
+  把規格寫在 IaC（Terraform）裡的好處是**改一個數字就能調整**，不必重建整個流程
 - 未來 Ampere VM 到手後，將部署 StockRadar（FastAPI + PostgreSQL + React）作為正式對外服務
 
 ---
 
-*最後更新：2026-05-10*
+*最後更新：2026-06-26*
