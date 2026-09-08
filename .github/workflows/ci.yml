@@ -16,6 +16,28 @@ jobs:
     defaults:
       run:
         working-directory: backend
+    # 06-auth-hardening.md M0：DB 測試地基需要真的 PostgreSQL，不是 SQLite
+    # 代打——asyncpg、pgcrypto 的 gen_random_uuid()、UUID 欄位型別都是
+    # postgres 專屬。GitHub Actions 的 job 本身就跑在 runner VM 上（不在
+    # container 裡），所以 service 開的 port 直接映射到 localhost，
+    # 不需要額外的 network 設定。
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: stockradar
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: stockradar_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U stockradar"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgresql+asyncpg://stockradar:test@127.0.0.1:5432/stockradar_test
+      SECRET_KEY: ci-test-only-secret-not-used-anywhere-else
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +53,15 @@ jobs:
       # 風格規則等有需要再開，一開始就全開只會讓 CI 變成噪音。
       - name: Ruff
         run: ruff check --select E9,F63,F7,F82,F401 .
+
+      # migrations/env.py 讀的是 DATABASE_URL 環境變數（跟上面 job env 同一個），
+      # 這一步同時證明了「alembic upgrade head 可以在乾淨的 DB 上從零建出
+      # 完整 schema」——也是 01-backend.md Phase 1 的既有驗收標準之一。
+      - name: Alembic upgrade head
+        run: alembic upgrade head
+
+      - name: Verify migration matches models exactly
+        run: python scripts/verify_migration_schema.py
 
       - name: Pytest
         run: pytest --cov=. --cov-report=term-missing:skip-covered
