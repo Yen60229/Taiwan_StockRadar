@@ -41,17 +41,21 @@ def _sqla_type_name(coltype) -> str:
     return str(coltype).upper()
 
 
+# Alembic's own bookkeeping table -- not part of the application schema,
+# Base.metadata knows nothing about it, and it's supposed to be there.
+_ALEMBIC_BOOKKEEPING_TABLES = {"alembic_version"}
+
+
 async def inspect_actual_schema(db_url: str) -> dict:
     """Reflect the live database via a sync inspector (run in a thread)."""
-    sync_url = db_url.replace("postgresql+asyncpg://", "postgresql+psycopg2://")
-    # asyncpg has no sync inspector; reuse asyncpg engine + run_sync instead
-    # of requiring psycopg2 to be installed.
     engine = create_async_engine(db_url)
 
     def _reflect(sync_conn):
         insp = inspect(sync_conn)
         out = {}
         for table_name in insp.get_table_names():
+            if table_name in _ALEMBIC_BOOKKEEPING_TABLES:
+                continue
             cols = {
                 c["name"]: {
                     "type": _sqla_type_name(c["type"]),
@@ -62,9 +66,17 @@ async def inspect_actual_schema(db_url: str) -> dict:
             uniques = sorted(
                 tuple(sorted(u["column_names"])) for u in insp.get_unique_constraints(table_name)
             )
+            # PostgreSQL implements every UNIQUE constraint (including a
+            # plain `Column(unique=True)`) as a unique index under the hood,
+            # and get_indexes() faithfully reports that index. It's not a
+            # real extra index -- it's the constraint's own implementation
+            # detail -- so drop any index whose column set exactly matches
+            # a unique constraint we already counted above, or we'd flag
+            # every single UniqueConstraint in the app as a "missing index".
             indexes = sorted(
                 (idx["name"], tuple(idx["column_names"]))
                 for idx in insp.get_indexes(table_name)
+                if tuple(sorted(idx["column_names"])) not in uniques
             )
             out[table_name] = {"columns": cols, "unique_sets": uniques, "indexes": indexes}
         return out
@@ -77,10 +89,20 @@ async def inspect_actual_schema(db_url: str) -> dict:
 
 def expected_schema() -> dict:
     """Build the same shape of dict, but from Base.metadata (source of truth)."""
+    from sqlalchemy.dialects import postgresql
+
+    pg = postgresql.dialect()
     out = {}
     for name, table in Base.metadata.tables.items():
         cols = {
-            c.name: {"type": _sqla_type_name(c.type), "nullable": c.nullable}
+            # Compile through the postgres dialect, not a bare str(): a
+            # generic sa.DateTime() stringifies as "DATETIME", but the
+            # column postgres actually creates -- and what get_columns()
+            # reflects back -- is TIMESTAMP. Comparing the two verbatim
+            # would flag every single DateTime column as a type mismatch
+            # even though the migration is byte-for-byte what create_all()
+            # would have produced.
+            c.name: {"type": _sqla_type_name(c.type.compile(dialect=pg)), "nullable": c.nullable}
             for c in table.columns
         }
         uniques = sorted(
