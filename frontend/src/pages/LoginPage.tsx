@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { authApi } from "../api/client";
+import { authApi, errMessage } from "../api/client";
 import { useAuth } from "../store/auth";
 
 export default function LoginPage() {
@@ -11,18 +11,31 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [err, setErr] = useState("");
+  const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
+
+  function switchMode(next: "login" | "register") {
+    setMode(next);
+    setErr(""); setNotice("");
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErr(""); setLoading(true);
+    setErr(""); setNotice(""); setLoading(true);
     try {
-      const fn = mode === "login" ? authApi.login : authApi.register;
-      const data = await fn({ email, password, ...(mode === "register" && { name }) });
-      setAuth(data.user, data.access_token);
-      nav("/");
+      if (mode === "register") {
+        // 註冊「不會」拿到 token —— 帳號建立後是待審核狀態，
+        // 要等管理員核准。這裡刻意不呼叫 setAuth、也不導頁。
+        const data = await authApi.register({ email, password, name });
+        setNotice(data.message);
+        setPassword("");
+      } else {
+        const data = await authApi.login({ email, password });
+        setAuth(data.user, data.access_token);
+        nav("/");
+      }
     } catch (e: any) {
-      setErr(e.response?.data?.detail || "請檢查輸入內容");
+      setErr(errMessage(e, "請檢查輸入內容"));
     } finally { setLoading(false); }
   }
 
@@ -45,9 +58,14 @@ export default function LoginPage() {
           </div>
         </div>
 
-        <h1 style={{ fontSize: 22, margin: "20px 0 24px" }}>
-          {mode === "login" ? "登入帳號" : "註冊新帳號"}
+        <h1 style={{ fontSize: 22, margin: "20px 0 8px" }}>
+          {mode === "login" ? "登入帳號" : "申請帳號"}
         </h1>
+        <p style={{ fontSize: 12.5, color: "var(--text-mute)", margin: "0 0 22px", lineHeight: 1.6 }}>
+          {mode === "login"
+            ? "這是私人的選股工具，需要經過核准的帳號才能使用。"
+            : "送出後需要管理員核准才會開通，核准時會寄信通知你。"}
+        </p>
 
         <form onSubmit={onSubmit} style={{ display: "grid", gap: 14 }}>
           {mode === "register" && (
@@ -56,21 +74,30 @@ export default function LoginPage() {
           <Field label="Email" type="email" value={email} onChange={setEmail} placeholder="you@example.com" required />
           <Field label="密碼" type="password" value={password} onChange={setPassword} placeholder="至少 6 字元" required />
           {err && <div style={{ color: "var(--sell)", fontSize: 13 }}>⚠️ {err}</div>}
+          {notice && (
+            <div style={{
+              fontSize: 13, lineHeight: 1.6, padding: "12px 14px", borderRadius: 8,
+              background: "rgba(0,210,255,.08)", border: "1px solid rgba(0,210,255,.3)",
+              color: "var(--text)",
+            }}>
+              ✅ {notice}
+            </div>
+          )}
           <button type="submit" disabled={loading} style={{
             marginTop: 8, padding: "12px 20px",
             background: "linear-gradient(135deg,#00d2ff,#00a8d4)",
             color: "#02121e", borderRadius: 10, fontWeight: 700,
             opacity: loading ? .6 : 1,
           }}>
-            {loading ? "處理中…" : mode === "login" ? "登入" : "建立帳號"}
+            {loading ? "處理中…" : mode === "login" ? "登入" : "送出申請"}
           </button>
         </form>
 
         <div style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: "var(--text-mute)" }}>
           {mode === "login" ? "還沒有帳號？" : "已有帳號？"}
-          <button onClick={() => setMode(mode === "login" ? "register" : "login")}
+          <button onClick={() => switchMode(mode === "login" ? "register" : "login")}
                   style={{ color: "var(--accent)", marginLeft: 6, fontWeight: 600 }}>
-            {mode === "login" ? "註冊" : "登入"}
+            {mode === "login" ? "申請帳號" : "登入"}
           </button>
         </div>
       </div>

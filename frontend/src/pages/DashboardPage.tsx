@@ -155,6 +155,9 @@ export default function DashboardPage() {
         {/* Actions */}
         <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
           <button onClick={exportCSV} style={btnStyle("#0070c0")}>📥 CSV</button>
+          {user?.role === "admin" && (
+            <button onClick={() => nav("/admin")} style={btnStyle("#0070c0")}>👥 帳號管理</button>
+          )}
           <div style={{ width:1, height:20, background:"rgba(255,255,255,.1)", margin:"0 4px" }} />
           <span style={{ fontSize:13, color:"#5a7ca8" }}>👤 {user?.name || user?.email?.split("@")[0]}</span>
           <button onClick={() => { logout(); nav("/login"); }} style={btnStyle()}>登出</button>

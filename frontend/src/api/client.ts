@@ -13,10 +13,26 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/** 帳號被停權 / 尚未核准時後端回的錯誤碼（見 backend/api/deps.py） */
+const ACCOUNT_BLOCKED_CODES = [
+  "pending_approval",
+  "registration_rejected",
+  "account_disabled",
+  "account_not_active",
+];
+
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) {
+    const status = err.response?.status;
+    const code = err.response?.data?.detail?.code;
+
+    // 403 + 帳號類錯誤碼＝手上這張 token 對應的帳號已經不能用了
+    // （例如管理員把它停權）。跟 401 一樣要把人踢回登入頁，
+    // 否則畫面會停在一個每個請求都失敗的空殼上。
+    const accountBlocked = status === 403 && ACCOUNT_BLOCKED_CODES.includes(code);
+
+    if (status === 401 || accountBlocked) {
       localStorage.removeItem("token");
       if (location.pathname !== "/login") location.href = "/login";
     }
@@ -24,12 +40,44 @@ api.interceptors.response.use(
   }
 );
 
+/**
+ * 從 axios 錯誤裡取出可以直接顯示給人看的訊息。
+ * FastAPI 的 detail 可能是字串，也可能是 {code, message} 物件——
+ * 直接把物件塞進 JSX 會讓 React 整個 crash，所以一律在這裡收斂成字串。
+ */
+export function errMessage(e: any, fallback = "發生錯誤，請稍後再試"): string {
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (detail?.message) return detail.message;
+  if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg;  // pydantic 422
+  return fallback;
+}
+
 // ── Types ────────────────────────────────────────────────
 export interface User {
   id: string;
   email: string;
   name?: string;
   notify_email: boolean;
+  role: "user" | "admin";
+  status: "pending" | "active" | "rejected" | "disabled";
+}
+
+/** 註冊回應：刻意沒有 access_token —— 帳號要等管理員核准才能用 */
+export interface RegisterResponse {
+  status: "pending_approval";
+  message: string;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  name?: string;
+  role: "user" | "admin";
+  status: "pending" | "active" | "rejected" | "disabled";
+  created_at?: string;
+  approved_at?: string;
+  last_login_at?: string;
 }
 
 export interface ScreenItem {
@@ -81,10 +129,24 @@ export interface StockDetail {
 // ── Endpoints ────────────────────────────────────────────
 export const authApi = {
   register: (data: { email: string; password: string; name?: string }) =>
-    api.post("/auth/register", data).then((r) => r.data),
+    api.post<RegisterResponse>("/auth/register", data).then((r) => r.data),
   login: (data: { email: string; password: string }) =>
     api.post("/auth/login", data).then((r) => r.data),
   me: () => api.get<User>("/auth/me").then((r) => r.data),
+};
+
+export const adminApi = {
+  listUsers: (status?: string) =>
+    api.get<AdminUser[]>("/admin/users", { params: status ? { status } : {} })
+       .then((r) => r.data),
+  approve: (id: string) =>
+    api.post<AdminUser>(`/admin/users/${id}/approve`).then((r) => r.data),
+  reject: (id: string) =>
+    api.post<AdminUser>(`/admin/users/${id}/reject`).then((r) => r.data),
+  disable: (id: string) =>
+    api.post<AdminUser>(`/admin/users/${id}/disable`).then((r) => r.data),
+  enable: (id: string) =>
+    api.post<AdminUser>(`/admin/users/${id}/enable`).then((r) => r.data),
 };
 
 export const screenApi = {
