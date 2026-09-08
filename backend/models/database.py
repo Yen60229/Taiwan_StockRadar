@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger, Boolean, Column, Date, DateTime,
+    BigInteger, Boolean, CheckConstraint, Column, Date, DateTime, ForeignKey,
     Integer, Numeric, String, UniqueConstraint, text
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -110,6 +110,20 @@ class ChipConcentration(Base):
 
 
 # ── 使用者 ────────────────────────────────────────────────────
+# 角色與狀態刻意用 text + CHECK 約束，不用 PostgreSQL 的 ENUM 型別：
+# ENUM 要新增一個值就得跑 ALTER TYPE，在交易裡還有限制；text + CHECK
+# 一樣擋得住寫入垃圾值，要擴充時只是改一條約束，痛苦少很多。
+ROLE_USER  = "user"
+ROLE_ADMIN = "admin"
+VALID_ROLES = (ROLE_USER, ROLE_ADMIN)
+
+STATUS_PENDING  = "pending"    # 剛註冊，等管理員核准
+STATUS_ACTIVE   = "active"     # 可以正常登入使用
+STATUS_REJECTED = "rejected"   # 管理員拒絕
+STATUS_DISABLED = "disabled"   # 曾經可用，被管理員停權
+VALID_STATUSES = (STATUS_PENDING, STATUS_ACTIVE, STATUS_REJECTED, STATUS_DISABLED)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -120,6 +134,32 @@ class User(Base):
     name         = Column(String(50),  nullable=True)
     notify_email = Column(Boolean,     default=True)
     created_at   = Column(DateTime,    default=datetime.utcnow)
+
+    # ── 註冊核准制 + 角色（見 docs/roadmap/06-auth-hardening.md M1）──
+    role          = Column(String(16), nullable=False, server_default=ROLE_USER)
+    status        = Column(String(16), nullable=False, server_default=STATUS_PENDING)
+    approved_at   = Column(DateTime,   nullable=True)
+    approved_by   = Column(UUID(as_uuid=True),
+                           ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    last_login_at = Column(DateTime,   nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "role IN ('user', 'admin')", name="ck_users_role",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'active', 'rejected', 'disabled')",
+            name="ck_users_status",
+        ),
+    )
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == ROLE_ADMIN
+
+    @property
+    def can_login(self) -> bool:
+        return self.status == STATUS_ACTIVE
 
 
 # ── 自選清單 ──────────────────────────────────────────────────
