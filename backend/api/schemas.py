@@ -34,6 +34,31 @@ class UserOut(BaseModel):
     email: EmailStr
     name: Optional[str] = None
     notify_email: bool = True
+    role: str = "user"
+    status: str = "active"
+
+
+class RegisterResponse(BaseModel):
+    """
+    註冊成功不再直接回 token —— 帳號要等管理員核准才能用。
+    刻意跟 TokenResponse 分成兩個型別，讓「註冊完就登入」這件事
+    在型別層面就不可能發生，而不是靠開發者記得不要回 token。
+    """
+    status: str = "pending_approval"
+    message: str = "已送出申請，管理員核准後你會收到通知信"
+
+
+# ── Admin ─────────────────────────────────────────────────────
+class AdminUserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    email: EmailStr
+    name: Optional[str] = None
+    role: str
+    status: str
+    created_at: Optional[datetime] = None
+    approved_at: Optional[datetime] = None
+    last_login_at: Optional[datetime] = None
 
 
 # ── Screen ────────────────────────────────────────────────────

@@ -9,15 +9,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import and_, desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.deps import get_db_session
+from api.deps import get_current_user, get_db_session
 from api.schemas import InstFlowPoint, StockDetail
-from models.database import ChipConcentration, DailyQuote, InstitutionalFlow, Stock
+from models.database import ChipConcentration, DailyQuote, InstitutionalFlow, Stock, User
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
 
 
 @router.get("/{code}", response_model=StockDetail)
-async def get_stock_detail(code: str, db: AsyncSession = Depends(get_db_session)):
+async def get_stock_detail(
+    code: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
     stock = (await db.execute(select(Stock).where(Stock.code == code))).scalar_one_or_none()
     if not stock:
         raise HTTPException(404, f"找不到股票 {code}")

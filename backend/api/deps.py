@@ -18,7 +18,9 @@ from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from models.database import AsyncSessionLocal, User
+from models.database import (
+    STATUS_DISABLED, STATUS_PENDING, STATUS_REJECTED, AsyncSessionLocal, User,
+)
 
 SECRET_KEY = os.environ.get("SECRET_KEY")
 # 未設定、或原封不動照抄 .env.example 的樣板值，都拒絕啟動：
@@ -96,6 +98,49 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if not user:
         raise cred_exc
+
+    # 狀態檢查放在這裡，而不是只在登入時檢查一次：token 有效期 7 天，
+    # 管理員停權一個帳號後，那個人手上的舊 token 必須「立刻」失效，
+    # 而不是等到 token 過期或他下次登入才生效。
+    if not user.can_login:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": status_code_for(user.status),
+                    "message": status_message_for(user.status)},
+        )
+    return user
+
+
+def status_code_for(user_status: str) -> str:
+    return {
+        STATUS_PENDING:  "pending_approval",
+        STATUS_REJECTED: "registration_rejected",
+        STATUS_DISABLED: "account_disabled",
+    }.get(user_status, "account_not_active")
+
+
+def status_message_for(user_status: str) -> str:
+    return {
+        STATUS_PENDING:  "帳號尚未通過審核，管理員核准後你會收到通知信",
+        STATUS_REJECTED: "這個帳號的申請未通過審核",
+        STATUS_DISABLED: "這個帳號已被停用",
+    }.get(user_status, "帳號目前無法使用")
+
+
+async def require_admin(user: User = Depends(get_current_user)) -> User:
+    """
+    管理端點用的依賴。get_current_user 已經確保「登入有效且帳號可用」，
+    這裡只再多問一句「是不是管理員」。
+
+    M2 會在這裡再加上「而且已經啟用 2FA」的檢查（見 06-auth-hardening.md）。
+    """
+    if not user.is_admin:
+        # 刻意回 403 而不是 404：對方確實通過身分驗證了，只是權限不足。
+        # 這裡不需要隱藏管理端點的存在——路徑本來就寫在公開的 OpenAPI 文件裡。
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "admin_required", "message": "需要管理員權限"},
+        )
     return user
 
 

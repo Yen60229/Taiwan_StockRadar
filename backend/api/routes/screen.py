@@ -10,7 +10,7 @@ from sqlalchemy import and_, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
-from api.deps import get_current_user_optional, get_db_session
+from api.deps import get_current_user, get_db_session
 from api.schemas import ScreenFilter, ScreenItem, ScreenResponse
 from models.database import (
     ChipConcentration,
@@ -51,7 +51,7 @@ async def screen_stocks(
     markets:       Optional[list[str]] = Query(None),
     only_inst_buy: bool  = Query(False),
     db:   AsyncSession = Depends(get_db_session),
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),
 ):
     """
     核心篩選邏輯：
@@ -128,10 +128,8 @@ async def screen_stocks(
     rows = (await db.execute(q)).all()
 
     # 取得使用者自選清單
-    watchlist_codes: set[str] = set()
-    if user:
-        wl = await db.execute(select(Watchlist.stock_code).where(Watchlist.user_id == user.id))
-        watchlist_codes = {r[0] for r in wl}
+    wl = await db.execute(select(Watchlist.stock_code).where(Watchlist.user_id == user.id))
+    watchlist_codes = {r[0] for r in wl}
 
     items = [
         ScreenItem(
@@ -161,7 +159,10 @@ async def screen_stocks(
 
 
 @router.get("/industries", response_model=list[str])
-async def list_industries(db: AsyncSession = Depends(get_db_session)):
+async def list_industries(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+):
     rows = await db.execute(
         select(distinct(Stock.industry))
         .where(Stock.industry.isnot(None))
