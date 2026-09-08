@@ -47,13 +47,30 @@ def _expected():
         m.Base = original
 
 
+def _pg_reflection_spelling(type_name: str) -> str:
+    """
+    Real PostgreSQL reflection abbreviates some type names compared to
+    what dialect-compiling the Python type object produces -- e.g.
+    sa.DateTime().compile(dialect=postgresql.dialect()) spells out
+    "TIMESTAMP WITHOUT TIME ZONE", but insp.get_columns() reports the same
+    column back as plain "TIMESTAMP". Both are the exact same Postgres
+    type; this reproduces that real-world abbreviation so the offline
+    simulation below actually exercises the code path that broke twice
+    in production (2026-09-08) instead of trivially matching itself.
+    """
+    if type_name.startswith("TIMESTAMP WITHOUT TIME ZONE"):
+        return "TIMESTAMP" + type_name[len("TIMESTAMP WITHOUT TIME ZONE"):]
+    return type_name
+
+
 def _reflected_like(exp: dict) -> dict:
     """
     Build an "actual" dict shaped like what a real, CORRECT reflection of
     the migrated DB would return -- i.e. faithfully re-derive it from
-    `exp` via the same rule the real `inspect_actual_schema()` filter
-    applies, rather than hand-copying `exp` (which would trivially always
-    match and prove nothing about the filtering logic itself).
+    `exp` via the same rules real Postgres reflection actually applies
+    (index-for-unique-constraint, abbreviated type spelling), rather than
+    hand-copying `exp` verbatim (which would trivially always match and
+    prove nothing about the comparison logic itself).
     """
     actual = {}
     for table, data in exp.items():
@@ -76,7 +93,10 @@ def _reflected_like(exp: dict) -> dict:
             # them in a test (to simulate a real drift) would silently
             # corrupt `exp` too and the test would compare a dict against
             # itself. Copy each column's inner dict as well.
-            "columns": {col: dict(info) for col, info in data["columns"].items()},
+            "columns": {
+                col: {**info, "type": _pg_reflection_spelling(info["type"])}
+                for col, info in data["columns"].items()
+            },
             "unique_sets": uniques,
             "indexes": filtered,
         }

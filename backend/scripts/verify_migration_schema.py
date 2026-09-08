@@ -144,10 +144,17 @@ def diff(expected: dict, actual: dict) -> list[str]:
                 )
             # Type comparison is intentionally loose (e.g. "NUMERIC(10, 2)"
             # vs "NUMERIC(10, 2)" should match, but exact vendor string
-            # formatting can differ across drivers) -- compare the leading
-            # type keyword, which is what actually matters for correctness.
-            e_kind = e["type"].split("(")[0].strip()
-            a_kind = a["type"].split("(")[0].strip()
+            # formatting can differ across drivers) -- compare only the
+            # leading type keyword, which is what actually matters for
+            # correctness. That keyword can itself contain a space (e.g.
+            # dialect-compiling sa.DateTime() gives the fully spelled out
+            # "TIMESTAMP WITHOUT TIME ZONE", while a reflected column comes
+            # back abbreviated as just "TIMESTAMP" -- both mean the exact
+            # same Postgres type), so take the first whitespace-delimited
+            # token *before* stripping any "(...)" parameter suffix, not
+            # the other way around.
+            e_kind = e["type"].split()[0].split("(")[0].strip() if e["type"] else ""
+            a_kind = a["type"].split()[0].split("(")[0].strip() if a["type"] else ""
             if e_kind != a_kind:
                 problems.append(
                     f"{table}.{col}: type mismatch — model={e['type']} db={a['type']}"
