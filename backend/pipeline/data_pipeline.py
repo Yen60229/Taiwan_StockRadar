@@ -524,6 +524,17 @@ async def refresh_avg_vol(session: AsyncSession, trade_date: date) -> int:
     return result.rowcount
 
 
+def _distinct_trade_dates(*dates) -> list[date]:
+    """
+    去重 + 排序，過濾 None。抽成純函式是因為這裡曾經有 bug：
+    假設兩個市場當天的交易日一定相同（trade_date = twse_date or tpex_date），
+    只挑其中一個去重算均量。實測發現兩市場的資料發布時間可能有落差
+    （例如 TWSE 尚未更新仍回報前一交易日），此時 daily_quotes 會同時寫入
+    兩個不同的 trade_date，只有被挑中的那個會被重算均量，另一個永遠是 NULL。
+    """
+    return sorted({d for d in dates if d is not None})
+
+
 # ── 交易日盤後 Pipeline（每日排程） ───────────────────────────
 async def run_quotes_pipeline() -> dict:
     """
@@ -557,10 +568,19 @@ async def run_quotes_pipeline() -> dict:
 
         all_quotes = pd.concat(frames, ignore_index=True).drop_duplicates(subset=["code"])
 
-        # 各市場的交易日各自取自 payload，通常相同但不強制假設
+        # 各市場的交易日各自取自 payload，"不"強制假設兩者相同。
+        # 實測發現兩邊的資料發布時間會有落差（例如 TWSE 當日尚未更新、
+        # 仍回報前一交易日，TPEX 卻已經是最新一天），此時 daily_quotes
+        # 會同時寫入兩個不同的 trade_date，兩個都要各自重算均量，
+        # 否則較新那批（MAX(trade_date) 抓到的）永遠是 avg_vol_20d = NULL。
         twse_date = twse_q["trade_date"].iloc[0] if not twse_q.empty else None
         tpex_date = tpex_q["trade_date"].iloc[0] if not tpex_q.empty else None
-        trade_date = twse_date or tpex_date
+        trade_dates = _distinct_trade_dates(twse_date, tpex_date)
+        if twse_date != tpex_date:
+            logger.warning(
+                f"[Daily] TWSE 與 TPEX 交易日不一致：TWSE={twse_date} TPEX={tpex_date}，"
+                f"將分別重算兩個日期的均量"
+            )
         logger.info(f"[Daily] 行情 {len(all_quotes)} 檔，交易日 TWSE={twse_date} TPEX={tpex_date}")
 
         # ② 三大法人：用行情回報的交易日去要，確保兩張表日期一致
@@ -577,16 +597,17 @@ async def run_quotes_pipeline() -> dict:
     # ③ 寫入
     async with AsyncSessionLocal() as session:
         await upsert_daily_quotes(session, all_quotes)
-        await refresh_avg_vol(session, trade_date)
+        for d in trade_dates:
+            await refresh_avg_vol(session, d)
         for df in inst_frames:
             if not df.empty:
                 await upsert_institutional_flow(session, df)
 
     inst_total = sum(len(df) for df in inst_frames)
     logger.info("=" * 60)
-    logger.info(f"✅ 行情 Pipeline 完成：{len(all_quotes)} 檔行情、{inst_total} 筆法人（{trade_date}）")
+    logger.info(f"✅ 行情 Pipeline 完成：{len(all_quotes)} 檔行情、{inst_total} 筆法人（{'、'.join(str(d) for d in trade_dates)}）")
 
-    return {"total": len(all_quotes), "inst": inst_total, "trade_date": trade_date}
+    return {"total": len(all_quotes), "inst": inst_total, "trade_dates": trade_dates}
 
 
 # ── 非交易日 Pipeline ─────────────────────────────────────────
