@@ -274,7 +274,6 @@ async def test_there_is_no_api_to_grant_admin(db_client, db_session):
     刻意的設計：管理員只能用 CLI（scripts/make_admin.py）建立。
     這個測試會在有人日後不小心加了「升級為管理員」的端點時失敗。
     """
-    admin = await _make_user(db_session, role=ROLE_ADMIN)
     r = await db_client.get("/openapi.json")
     paths = r.json()["paths"]
 

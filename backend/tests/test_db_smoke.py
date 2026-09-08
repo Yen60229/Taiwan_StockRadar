@@ -18,7 +18,10 @@ from decimal import Decimal
 
 from sqlalchemy import select, text
 
-from models.database import ChipConcentration, DailyQuote, Stock
+from api.deps import create_access_token, hash_password
+from models.database import (
+    ROLE_USER, STATUS_ACTIVE, ChipConcentration, DailyQuote, Stock, User,
+)
 
 
 async def test_migrated_schema_has_all_seven_tables(db_session):
@@ -68,11 +71,21 @@ async def test_rollback_mid_test_also_does_not_leak(db_session):
 
 async def test_screen_endpoint_reads_from_the_same_transaction(db_client, db_session):
     """
-    證明 db_client 的 dependency override 真的接到 db_session 這個交易——
-    這是 M1 要測 auth/screen/watchlist 端點的地基。
+    證明 db_client 的 dependency override 真的接到 db_session 這個交易。
+
+    /api/screen 自 M1 起需要登入（見 06-auth-hardening.md），所以這裡也要
+    先建一個 active 使用者、帶著 token 打——順帶證明了 auth 依賴同樣走在
+    這個測試交易裡。
     """
     today = date.today()
+    user = User(
+        email="smoke@example.com",
+        hashed_pw=await hash_password("smoke-test-password"),
+        role=ROLE_USER,
+        status=STATUS_ACTIVE,
+    )
     db_session.add_all([
+        user,
         Stock(code="2330", name="台積電", short_name="台積電",
               market="TWSE", industry="半導體業"),
         DailyQuote(stock_code="2330", trade_date=today,
@@ -80,8 +93,11 @@ async def test_screen_endpoint_reads_from_the_same_transaction(db_client, db_ses
         ChipConcentration(stock_code="2330", week_date=today, conc_ratio=Decimal("55.50")),
     ])
     await db_session.commit()
+    await db_session.refresh(user)
 
-    r = await db_client.get("/api/screen", params={"min_avg_vol": 0, "min_conc": 0})
+    headers = {"Authorization": f"Bearer {create_access_token(user.id, user.email)}"}
+    r = await db_client.get("/api/screen",
+                            params={"min_avg_vol": 0, "min_conc": 0}, headers=headers)
     assert r.status_code == 200
 
     body = r.json()
