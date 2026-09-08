@@ -35,6 +35,10 @@ services:
     volumes:
       - ./backend:/app
       - ./logs:/app/logs
+    # 建表交給 Alembic：容器啟動時先跑一次 migration 再啟動 API。
+    # 冪等（已在 head 時是 no-op），且 bind mount 讓新增的 migration 檔
+    # 不用重建 image 就會出現在容器裡。
+    command: ["sh", "-c", "alembic upgrade head && uvicorn api.main:app --host 0.0.0.0 --port 8000"]
 
   scheduler:
     build: ./backend

@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from api.routes import auth, screen, stocks, watchlist
-from models.database import AsyncSessionLocal, init_db
+from models.database import AsyncSessionLocal
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,9 +24,10 @@ logger = logging.getLogger("stockradar")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 建表交給 Alembic，在容器啟動 uvicorn 之前跑（dev: compose command；
+    # prod: deploy.sh）。這裡不再呼叫 create_all()——理由見
+    # models/database.py 的說明：兩條建表路徑會漂移。
     logger.info("🚀 StockRadar API starting...")
-    if os.environ.get("APP_ENV") != "production":
-        await init_db()
     yield
     logger.info("👋 StockRadar API shutting down")
 

@@ -85,9 +85,11 @@ deploy() {
     log "拉取最新程式碼..."
     git pull
 
-    log "重新建置並啟動服務..."
+    log "重新建置映像檔..."
     docker compose -f "$COMPOSE_FILE" build --pull
-    docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
+
+    log "啟動資料庫..."
+    docker compose -f "$COMPOSE_FILE" up -d postgres
 
     log "等待資料庫健康..."
     for i in $(seq 1 30); do
@@ -100,12 +102,16 @@ deploy() {
         sleep 2
     done
 
-    # APP_ENV=production 時 API 啟動不會建表；這裡跑一次 create_all（冪等）。
-    # Alembic 導入後這行改成：docker compose run --rm api alembic upgrade head
-    log "建立 / 確認資料表..."
+    # schema 由 Alembic 管理，必須在 api / scheduler 啟動之前跑完——
+    # 否則它們會對著一個還沒有任何資料表的資料庫發出第一批查詢。
+    # `alembic upgrade head` 是冪等的：已經在 head 時是 no-op，可放心每次部署都跑。
+    log "套用資料庫 migration（alembic upgrade head）..."
     docker compose -f "$COMPOSE_FILE" run --rm --no-deps api \
-        python -c "import asyncio; from models.database import init_db; asyncio.run(init_db())" \
-        && ok "資料表就緒" || die "建表失敗，請看上方錯誤"
+        alembic upgrade head \
+        && ok "migration 完成" || die "migration 失敗，請看上方錯誤"
+
+    log "啟動其餘服務..."
+    docker compose -f "$COMPOSE_FILE" up -d --remove-orphans
 
     log "確認服務狀態..."
     docker compose -f "$COMPOSE_FILE" ps

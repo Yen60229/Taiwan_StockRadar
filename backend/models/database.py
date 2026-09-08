@@ -151,9 +151,9 @@ class OwnershipRatio(Base):
         UniqueConstraint("stock_code", "report_date", name="uq_ownership_ratio"),
     )
 
-
-# ── 建立所有資料表 ────────────────────────────────────────────
-async def init_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    print("✅ Database tables created.")
+# 注意：這裡刻意沒有 init_db() / create_all()。
+# 唯一的建表路徑是 Alembic（見 migrations/、scripts/alembic_utils.py）：
+#   dev  → docker-compose.yml 的 api command 先跑 `alembic upgrade head`
+#   prod → scripts/deploy.sh 在啟動服務前跑一次
+# 保留 create_all() 當第二條路會讓兩者長期漂移而不自知——
+# 這正是 06-auth-hardening.md M0 要解決的事。

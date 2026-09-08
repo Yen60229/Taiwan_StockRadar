@@ -1,6 +1,6 @@
 """
 StockRadar - 資料初始化（第一次跑用）
-1. 建立所有資料表
+1. 建立所有資料表（Alembic upgrade head）
 2. 灌入上市/上櫃公司基本資料
 3. 抓近 3 個月歷史行情
 4. 抓最近 4 週集保資料
@@ -9,17 +9,15 @@ StockRadar - 資料初始化（第一次跑用）
 """
 import asyncio
 import logging
+import os
 
-from models.database import init_db
 from pipeline.data_pipeline import run_full_pipeline
+from scripts.alembic_utils import run_upgrade_head
 
 logger = logging.getLogger(__name__)
 
 
-async def init_all():
-    logger.info("🔧 Step 1/2: 建立資料表")
-    await init_db()
-
+async def _run_pipeline():
     logger.info("🚀 Step 2/2: 執行第一次完整 Pipeline")
     result = await run_full_pipeline()
 
@@ -32,4 +30,11 @@ async def init_all():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-    asyncio.run(init_all())
+
+    # ⚠️ 順序很重要：alembic 內部自己呼叫 asyncio.run()，
+    # 必須在還沒有任何事件迴圈在跑的時候呼叫，所以放在
+    # asyncio.run(_run_pipeline()) 之前、在同步層執行。
+    logger.info("🔧 Step 1/2: 建立資料表（alembic upgrade head）")
+    run_upgrade_head(os.environ["DATABASE_URL"])
+
+    asyncio.run(_run_pipeline())
