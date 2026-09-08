@@ -201,9 +201,11 @@ POST /api/auth/login  {email, password}
 > 工時依 ADR-11 的校準原則（先前 P0 估 10h 實際 20–25h）估得保守。
 > 每個 milestone 結束都是可部署、有價值的狀態，不必全部做完才上線。
 
-### M0｜前置（~6h）—— 沒有這兩樣，後面每一步都在裸奔
-- [ ] **Alembic baseline**：`alembic init` → 從現有 models autogenerate 第一版 → `deploy.sh` 改跑 `alembic upgrade head`。本計畫要改 `users` 表、加 `recovery_codes` 表，這就是藍圖一直說「該導入 Alembic」的那個時刻
-- [ ] **DB 測試地基**：CI 加 `services: postgres:16`，`conftest.py` 加 async session fixture（每個測試在 transaction 內跑完 rollback）。目前 70 個測試全是離線的，auth / admin 流程一定要打真的 DB
+### M0｜前置（~6h）—— 沒有這兩樣，後面每一步都在裸奔 ✅ **2026-09-08 完成**
+- [x] **Alembic baseline**：`alembic init -t async migrations` → baseline migration（`migrations/versions/20260908_..._baseline_schema.py`）逐表用 SQLAlchemy 的 DDL 編譯器（`CreateTable`/`CreateIndex` 對 postgresql dialect）算出精確欄位、型別、unique 約束、索引命名，不是手猜；離線用 `alembic upgrade head --sql` 產生的 SQL 與 model 編譯出的 SQL 逐字 diff 後零差異。`scripts/verify_migration_schema.py` 把這個比對做成可重複執行的工具：真的跑一次 `alembic upgrade head`，用 `sqlalchemy.inspect` 反查 schema，逐欄/逐約束/逐索引跟 `Base.metadata` 比對，不只是「跑起來沒噴錯」。`models.database.init_db()` 已整個移除——`deploy.sh` 在 `up -d` **之前**（不是之後：api 不該對著沒表的 DB 發第一批查詢）跑一次 `alembic upgrade head`；dev 的 `docker-compose.yml` 讓 api 的 `command` 自己先跑再啟動 uvicorn；`pipeline/init_data.py` 與 `api/main.py` 的 lifespan 同步移除對 `init_db()` 的依賴
+- [x] **DB 測試地基**：CI 的 backend job 加 `services: postgres:16-alpine`，跑完 `alembic upgrade head` 後執行 `verify_migration_schema.py` 才進 pytest；`conftest.py` 新增 `db_session`（每個測試包一個交易，測試內的 `commit()` 只是重開 SAVEPOINT，測試結束整個 rollback——SQLAlchemy 官方「Joining a Session into an External Transaction」寫法）與 `db_client`（把 FastAPI 的 `get_db_session` override 成同一個 `db_session`，端點測試也在同一個交易裡）；`tests/test_db_smoke.py` 五個測試證明：schema 真的建起來、寫入讀得回來、上一個測試的 commit 不會外洩、測試內主動 rollback 也不外洩、`/api/screen` 端點讀到的是同一筆測試資料
+
+  > ⚠️ 這批程式碼在本機（Windows、Docker Desktop 未開）**沒有連過真的 PostgreSQL**，離線驗證只做到「alembic 產生的 SQL 跟 model 編譯結果逐字相同」。`verify_migration_schema.py` 與 `test_db_smoke.py` 需要在有 Docker 的地方（CI、或 Oracle 機器上的拋棄式 container）實際跑過一次，才算真正驗證完畢。
 
 ### M1｜先把門關上（~10h）—— 做完這步「知道網址就連得到」就解決了
 - [ ] migration：`role` / `status` / `approved_*` / `last_login_at`

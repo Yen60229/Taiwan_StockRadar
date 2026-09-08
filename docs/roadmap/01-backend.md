@@ -97,7 +97,7 @@ flowchart TB
 **Week 7-10:Alembic migrations(約 12 小時)**
 - [ ] `alembic init backend/migrations`,`env.py` 接 async engine,`alembic revision --autogenerate` 產出 baseline
 - [ ] 第二個 migration:補上所有 ForeignKey(`daily_quotes.stock_code → stocks.code`、`watchlist.user_id → users.id ON DELETE CASCADE` 等),先清孤兒資料
-- [ ] prod 啟動流程改為 `alembic upgrade head`(在 API container entrypoint 或 deploy.sh),移除對 `init_db()`/create_all 的依賴;`init_data.py` 同步改用 alembic
+- [x] prod 啟動流程改為 `alembic upgrade head`(在 API container entrypoint 或 deploy.sh),移除對 `init_db()`/create_all 的依賴;`init_data.py` 同步改用 alembic —— **2026-09-08 完成，見 [`06-auth-hardening.md`](./06-auth-hardening.md) M0**:baseline migration 以 SQLAlchemy DDL 編譯器逐一驗算欄位/型別/索引/約束、`scripts/verify_migration_schema.py` 自動比對 migrated schema 與 `Base.metadata`、CI 新增 postgres service 跑 `alembic upgrade head` + 該驗證腳本
 - [ ] `datetime.utcnow` → `server_default=func.now()`(timezone-aware)
 
 **Week 11-12:pipeline 收尾**

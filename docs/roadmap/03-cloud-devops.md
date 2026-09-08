@@ -47,7 +47,7 @@ Phase 1        Phase 2              Phase 3                    Phase 4
 ### 具體任務
 - [ ] **修 Dockerfile**(~1 週):`backend/Dockerfile` 改成真正的 multi-stage(builder 裝 `build-essential` → runtime 只留 `libpq5`),加 `USER app`(non-root)、`HEALTHCHECK`;兩個 build context 各加 `.dockerignore`(排除 `logs/`、`.env`、`node_modules`);把第 1 行說謊的 "Multi-stage build" 註解改成事實
 - [ ] **前端可重現 build**(~1 天):commit `package-lock.json`,`frontend/Dockerfile` 改 `COPY package*.json` + `npm ci`
-- [ ] **導入 Alembic**(~1 週):`alembic init`,用 `--autogenerate` 從現有 models 產生 baseline migration;`deploy.sh` 在 `compose up` 前跑 `docker compose run --rm api alembic upgrade head`——這是 production 目前**唯一不存在的建表路徑**(`main.py:25-26` 在 prod 跳過 `init_db()`)
+- [x] **導入 Alembic**——**2026-09-08 完成**(見 [`06-auth-hardening.md`](./06-auth-hardening.md) M0):baseline migration、`deploy.sh` 在 `up -d` 前跑 `alembic upgrade head`(而非 compose up 之後,順序很重要——見 M0 的說明)、dev compose 的 api command 同步跑,`main.py` 的 lifespan 已移除 `init_db()`
 - [ ] **修 health check 斷鏈**(~半天):後端加 `GET /api/health`(或 Caddyfile 把 `/healthz` route 到 api),同步修 `scripts/deploy.sh:109`、`docs/deploy-to-vps.md:140`、`docs/部署到VPS.md:198`;compose 給 api/frontend/caddy 加 healthcheck
 - [ ] **拿掉 prod bind mount**(~半天):刪 `docker-compose.prod.yml:47-49,63-65` 的 `./backend:/app`——prod 必須跑 image 而不是 host 原始碼;dev 用 `docker-compose.override.yml` 保留 bind mount
 - [ ] **鎖住 dev compose**(~半天):`5432`/`8000` 改綁 `127.0.0.1:`,刪掉 `SECRET_KEY:-change-me-in-production` fallback(app 啟動時若無 SECRET_KEY 直接 crash);注意 **Docker 的 iptables 會繞過 UFW**,這是文件沒講的坑
