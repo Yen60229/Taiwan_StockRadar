@@ -147,6 +147,9 @@ export const adminApi = {
     api.post<AdminUser>(`/admin/users/${id}/disable`).then((r) => r.data),
   enable: (id: string) =>
     api.post<AdminUser>(`/admin/users/${id}/enable`).then((r) => r.data),
+  // 真的從資料庫刪除，不是停用——沒有復原按鈕
+  remove: (id: string) =>
+    api.delete(`/admin/users/${id}`).then(() => undefined),
 };
 
 export const screenApi = {

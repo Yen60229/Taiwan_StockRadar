@@ -24,6 +24,9 @@ export default function AdminPage() {
   const highlightId = searchParams.get("user");
   const [tab, setTab] = useState<Tab>(highlightId ? "all" : "pending");
   const [err, setErr] = useState("");
+  // 待確認刪除的對象。獨立於 act mutation，因為刪除要先跳出輸入「刪除」
+  // 的確認框，不能跟核准/停用這種一按就生效的動作共用同一條路徑。
+  const [pendingDelete, setPendingDelete] = useState<AdminUser | null>(null);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ["admin-users", tab],
@@ -35,6 +38,16 @@ export default function AdminPage() {
       adminApi[action](id),
     onSuccess: () => {
       setErr("");
+      qc.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: (e) => setErr(errMessage(e)),
+  });
+
+  const del = useMutation({
+    mutationFn: (id: string) => adminApi.remove(id),
+    onSuccess: () => {
+      setErr("");
+      setPendingDelete(null);
       qc.invalidateQueries({ queryKey: ["admin-users"] });
     },
     onError: (e) => setErr(errMessage(e)),
@@ -92,21 +105,107 @@ export default function AdminPage() {
                 highlighted={u.id === highlightId}
                 busy={act.isPending}
                 onAct={(action) => act.mutate({ id: u.id, action })}
+                onDelete={() => setPendingDelete(u)}
               />
             ))}
           </div>
         )}
       </div>
+
+      {pendingDelete && (
+        <DeleteConfirmModal
+          target={pendingDelete}
+          busy={del.isPending}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => del.mutate(pendingDelete.id)}
+        />
+      )}
     </div>
   );
 }
 
-function UserRow({ u, isSelf, highlighted, busy, onAct }: {
+const DELETE_KEYWORD = "刪除";
+
+function DeleteConfirmModal({ target, busy, onCancel, onConfirm }: {
+  target: AdminUser; busy: boolean; onCancel: () => void; onConfirm: () => void;
+}) {
+  const [typed, setTyped] = useState("");
+  const confirmed = typed.trim() === DELETE_KEYWORD;
+
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed", inset: 0, zIndex: 50, display: "grid", placeItems: "center",
+        background: "rgba(2,6,12,.72)", backdropFilter: "blur(4px)", padding: 20,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          width: "100%", maxWidth: 420, borderRadius: 14, padding: 24,
+          background: "#0a1628", border: "1px solid rgba(255,77,106,.35)",
+        }}
+      >
+        <div style={{ fontSize: 15, fontWeight: 800, color: "#ff8fa3", marginBottom: 8 }}>
+          ⚠️ 永久刪除帳號
+        </div>
+        <div style={{ fontSize: 13, lineHeight: 1.7, color: "#cdd9e8" }}>
+          即將刪除 <b style={{ color: "#fff" }}>{target.email}</b>
+          {target.name ? `（${target.name}）` : ""}。
+          <br />
+          這個動作會把帳號從資料庫裡<b>直接刪除</b>，包含他的自選清單，
+          <b>無法復原</b>，不是停用。
+        </div>
+
+        <div style={{ marginTop: 18 }}>
+          <label style={{ display: "block" }}>
+            <div style={{ fontSize: 12, color: "var(--text-mute)", marginBottom: 6 }}>
+              請輸入「{DELETE_KEYWORD}」以確認
+            </div>
+            <input
+              autoFocus
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              placeholder={DELETE_KEYWORD}
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 8,
+                background: "var(--bg-elev)", color: "var(--text)",
+                border: `1px solid ${confirmed ? "rgba(0,228,154,.5)" : "var(--line)"}`,
+                outline: "none",
+              }}
+            />
+          </label>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, marginTop: 20, justifyContent: "flex-end" }}>
+          <button onClick={onCancel} disabled={busy} style={{
+            padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+            color: "#8fa6bd", border: "1px solid rgba(143,166,189,.3)", background: "transparent",
+          }}>
+            取消
+          </button>
+          <button onClick={onConfirm} disabled={!confirmed || busy} style={{
+            padding: "9px 16px", borderRadius: 8, fontSize: 13, fontWeight: 700,
+            cursor: confirmed && !busy ? "pointer" : "not-allowed",
+            opacity: confirmed && !busy ? 1 : 0.4,
+            background: "#ff4d6a", color: "#1a0508", border: "none",
+          }}>
+            {busy ? "刪除中…" : "確認刪除"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserRow({ u, isSelf, highlighted, busy, onAct, onDelete }: {
   u: AdminUser;
   isSelf: boolean;
   highlighted?: boolean;
   busy: boolean;
   onAct: (a: "approve" | "reject" | "disable" | "enable") => void;
+  onDelete: () => void;
 }) {
   const s = STATUS_LABEL[u.status];
   return (
@@ -161,21 +260,26 @@ function UserRow({ u, isSelf, highlighted, busy, onAct }: {
         {(u.status === "disabled" || u.status === "rejected") && (
           <Action kind="primary" disabled={busy} onClick={() => onAct("enable")}>啟用</Action>
         )}
+        {!isSelf && (
+          <Action kind="danger" disabled={busy} onClick={onDelete}>刪除</Action>
+        )}
       </div>
     </div>
   );
 }
 
 function Action({ children, onClick, disabled, kind }: {
-  children: React.ReactNode; onClick: () => void; disabled?: boolean; kind?: "primary";
+  children: React.ReactNode; onClick: () => void; disabled?: boolean; kind?: "primary" | "danger";
 }) {
   return (
     <button onClick={onClick} disabled={disabled} style={{
       padding: "6px 14px", borderRadius: 7, fontSize: 12.5, fontWeight: 700,
       cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1,
       background: kind === "primary" ? "linear-gradient(135deg,#00d2ff,#00a8d4)" : "transparent",
-      color: kind === "primary" ? "#02121e" : "#8fa6bd",
-      border: kind === "primary" ? "none" : "1px solid rgba(143,166,189,.3)",
+      color: kind === "primary" ? "#02121e" : kind === "danger" ? "#ff8fa3" : "#8fa6bd",
+      border: kind === "primary" ? "none"
+            : kind === "danger" ? "1px solid rgba(255,77,106,.35)"
+            : "1px solid rgba(143,166,189,.3)",
     }}>{children}</button>
   );
 }

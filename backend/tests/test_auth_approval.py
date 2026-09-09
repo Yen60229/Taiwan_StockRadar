@@ -21,7 +21,7 @@ from sqlalchemy import select
 from api.deps import create_access_token, hash_password
 from models.database import (
     ROLE_ADMIN, ROLE_USER, STATUS_ACTIVE, STATUS_DISABLED, STATUS_PENDING,
-    STATUS_REJECTED, User,
+    STATUS_REJECTED, User, Watchlist,
 )
 
 PASSWORD = "correct-horse-battery-staple"
@@ -267,6 +267,76 @@ async def test_admin_endpoints_reject_unknown_user_id(db_client, db_session):
     r = await db_client.post(f"/api/admin/users/{uuid.uuid4()}/approve",
                              headers=_auth(admin))
     assert r.status_code == 404
+
+
+# ── 刪除帳號 ──────────────────────────────────────────────────
+async def test_admin_cannot_delete_themselves(db_client, db_session):
+    """跟不能停用自己同一個道理：唯一的管理員不該有辦法把自己刪光。"""
+    admin = await _make_user(db_session, role=ROLE_ADMIN)
+
+    r = await db_client.delete(f"/api/admin/users/{admin.id}", headers=_auth(admin))
+
+    assert r.status_code == 400
+    assert r.json()["detail"]["code"] == "cannot_target_self"
+
+    still_there = (await db_session.execute(
+        select(User).where(User.id == admin.id)
+    )).scalar_one_or_none()
+    assert still_there is not None
+
+
+async def test_admin_can_delete_a_user_and_row_is_gone_from_db(db_client, db_session):
+    """
+    這裡刻意不是「status 變成某個值」，而是真的去資料庫確認那一列不見了——
+    這支端點的重點就是硬刪除，跟停用（status=disabled，可還原）是不同的動作，
+    測試也要證明兩者不同，不能只測回應碼是 204。
+    """
+    admin  = await _make_user(db_session, role=ROLE_ADMIN)
+    victim = await _make_user(db_session, status=STATUS_ACTIVE)
+    victim_id = victim.id
+
+    r = await db_client.delete(f"/api/admin/users/{victim_id}", headers=_auth(admin))
+
+    assert r.status_code == 204
+    gone = (await db_session.execute(
+        select(User).where(User.id == victim_id)
+    )).scalar_one_or_none()
+    assert gone is None
+
+
+async def test_deleting_a_user_also_deletes_their_watchlist(db_client, db_session):
+    """
+    watchlist.user_id 沒有資料庫層的 FK（歷史遺留），刪除使用者不會被
+    Postgres 自動連坐清掉——這行為要靠應用程式碼自己做對，所以要有測試
+    鎖住它，不然日後很容易在重構時漏掉，留下永遠對不到人的孤兒列。
+    """
+    admin  = await _make_user(db_session, role=ROLE_ADMIN)
+    victim = await _make_user(db_session, status=STATUS_ACTIVE)
+    db_session.add(Watchlist(user_id=victim.id, stock_code="2330"))
+    await db_session.commit()
+
+    r = await db_client.delete(f"/api/admin/users/{victim.id}", headers=_auth(admin))
+    assert r.status_code == 204
+
+    leftover = (await db_session.execute(
+        select(Watchlist).where(Watchlist.user_id == victim.id)
+    )).scalars().all()
+    assert leftover == []
+
+
+async def test_deleting_unknown_user_id_is_404(db_client, db_session):
+    admin = await _make_user(db_session, role=ROLE_ADMIN)
+
+    r = await db_client.delete(f"/api/admin/users/{uuid.uuid4()}", headers=_auth(admin))
+    assert r.status_code == 404
+
+
+async def test_normal_user_cannot_delete_accounts(db_client, db_session):
+    normal = await _make_user(db_session, role=ROLE_USER, status=STATUS_ACTIVE)
+    victim = await _make_user(db_session, status=STATUS_ACTIVE)
+
+    r = await db_client.delete(f"/api/admin/users/{victim.id}", headers=_auth(normal))
+    assert r.status_code == 403
 
 
 async def test_there_is_no_api_to_grant_admin(db_client, db_session):
