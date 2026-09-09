@@ -1,7 +1,7 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { stockApi } from "../api/client";
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from "recharts";
+import InstFlowChart from "../components/InstFlowChart";
 
 export default function StockPage() {
   const { code } = useParams();
@@ -34,27 +34,7 @@ export default function StockPage() {
           <Stat label="籌碼集中度" value={data.conc_ratio != null ? `${Number(data.conc_ratio).toFixed(2)}%` : "—"} accent />
         </div>
 
-        <h3 style={{ fontSize: 16, marginTop: 28, marginBottom: 12 }}>📊 近 30 日法人買賣超（張）</h3>
-        <div style={{ background: "var(--bg-elev)", padding: 16, borderRadius: 12, height: 320 }}>
-          {data.inst_flow_30d.length === 0 ? (
-            <Center>無近期法人資料</Center>
-          ) : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={data.inst_flow_30d}>
-                <XAxis dataKey="trade_date" stroke="#5e7a96" tick={{ fontSize: 11 }}
-                       tickFormatter={(d: string) => d.slice(5)} />
-                <YAxis stroke="#5e7a96" tick={{ fontSize: 11 }} />
-                <Tooltip contentStyle={{ background: "#0a1628", border: "1px solid var(--line)", borderRadius: 8 }} />
-                <ReferenceLine y={0} stroke="#5e7a96" strokeDasharray="2 2" />
-                <Legend />
-                <Line type="monotone" dataKey="foreign_net" name="外資" stroke="#00d2ff" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="trust_net"   name="投信" stroke="#a78bfa" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="dealer_net"  name="自營" stroke="#ffb547" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="total_net"   name="合計" stroke="#00e49a" strokeWidth={2.5} />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+        <InstFlowChart rows={data.inst_flow_30d} />
       </div>
     </div>
   );

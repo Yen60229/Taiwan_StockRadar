@@ -1,10 +1,13 @@
 """
-StockRadar - 回補「單一交易日」的上市（TWSE）行情
+StockRadar - 回補「單一交易日」的上市（TWSE）行情與三大法人
 
 用途：
   修 openapi STOCK_DAY_ALL 慢一天的 bug（2026-09-10）時，DB 裡最後一個
-  交易日的 TWSE 行情會缺一天——舊程式每天寫的都是前一交易日的資料，
+  交易日的 TWSE 資料會缺一天——舊程式每天寫的都是前一交易日的資料，
   換成當日端點之後，中間那天不會有人去補。這支就是拿來補洞的。
+
+  行情和法人要一起補：每日 pipeline 是「拿行情的交易日去要 T86」，
+  所以行情慢一天的時候，法人也跟著慢一天，兩張表是同一個洞。
 
   也可以在任何「某天排程沒跑成功」的情況重跑，冪等（upsert）。
 
@@ -25,8 +28,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import httpx
 
 from models.database import AsyncSessionLocal
-from pipeline.data_pipeline import refresh_avg_vol, upsert_daily_quotes
-from scraper.twse_scraper import HEADERS, fetch_all_quotes_on
+from pipeline.data_pipeline import (
+    refresh_avg_vol, upsert_daily_quotes, upsert_institutional_flow,
+)
+from scraper.twse_scraper import (
+    HEADERS, fetch_all_quotes_on, fetch_institutional_flow_on,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -53,10 +60,21 @@ async def backfill(targets: list[date]) -> int:
                 )
                 continue
 
+            # 三大法人：跟行情同一個交易日，兩張表要一起補才不會一邊新一邊舊
+            inst_df = await fetch_institutional_flow_on(client, target)
+
             async with AsyncSessionLocal() as session:
                 n = await upsert_daily_quotes(session, df)
                 await refresh_avg_vol(session, target)
-            logger.info(f"[{target}] 寫入 {n} 檔上市行情，並重算 20 日均量")
+                inst_n = 0
+                if not inst_df.empty:
+                    inst_n = await upsert_institutional_flow(session, inst_df)
+
+            if inst_df.empty:
+                logger.warning(f"[{target}] T86 沒有法人資料（可能尚未公布）")
+            logger.info(
+                f"[{target}] 寫入 {n} 檔上市行情、{inst_n} 筆三大法人，並重算 20 日均量"
+            )
             written += n
     return written
 
