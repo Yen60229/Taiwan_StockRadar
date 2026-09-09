@@ -3,11 +3,13 @@ StockRadar - Email 通知（Resend + SMTP 備援）
 寄送週報，含「新進榜 / 跌出榜外」對比分析
 """
 import os
+import re
 import smtplib
 import logging
 from datetime import date, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import formatdate, make_msgid
 from pathlib import Path
 from typing import Optional
 
@@ -133,13 +135,38 @@ def send_via_resend(to_email: str, subject: str, html: str) -> bool:
         return False
 
 
+def _html_to_plain(html: str) -> str:
+    """
+    做一個粗略的純文字版本當 multipart/alternative 的備援。
+    不追求完美排版——垃圾信過濾器在意的是「有沒有純文字版本」，
+    不是這個版本好不好看。
+    """
+    text = re.sub(r"<br\s*/?>", "\n", html)
+    text = re.sub(r"</p>", "\n\n", text)
+    text = re.sub(r"<[^>]+>", "", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
 def send_via_smtp(to_email: str, subject: str, html: str) -> bool:
-    """Gmail SMTP 備援"""
+    """
+    Gmail SMTP 備援。
+
+    只寄 HTML、缺 Date/Message-ID 標頭的信，很容易被 Gmail 判定成垃圾信——
+    尤其是「用自己帳號寄給自己」這種模式（本專案帳號通知信剛好常常是
+    這樣：管理員的 Gmail 帳號同時是 SMTP_USER 也是收件人）。這裡補上
+    正常郵件該有的東西：純文字備援、Date、Message-ID。
+    這不保證一定進收件匣，但能降低被攔的機率；第一次被攔進垃圾桶後，
+    收件人手動點「非垃圾郵件」，Gmail 之後通常就會放行。
+    """
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = SMTP_USER
         msg["To"] = to_email
+        msg["Date"] = formatdate(localtime=True)
+        msg["Message-ID"] = make_msgid(domain=SMTP_USER.split("@")[-1] or None)
+        # multipart/alternative 依規範要「較不豐富的格式在前」，純文字先於 HTML
+        msg.attach(MIMEText(_html_to_plain(html), "plain", "utf-8"))
         msg.attach(MIMEText(html, "html", "utf-8"))
         with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
             server.starttls()
