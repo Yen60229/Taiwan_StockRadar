@@ -1,6 +1,13 @@
-# StockRadar — 部署到 Hetzner VPS（完整步驟）
+# StockRadar — 部署到 VPS（完整步驟）
 
 > 從開機到 HTTPS 上線，約 20-30 分鐘。
+>
+> **這個專案實際跑在哪：** Oracle Cloud Always Free 的 Ampere A1（2 OCPU / 12 GB，
+> ARM），不是 Hetzner。下面的步驟兩邊都適用；Oracle 特有的部分——要開 Security List
+> 而不只是 UFW、ARM base image、搶機失敗的重試腳本——看
+> [`oracle-cloud-automation.md`](./oracle-cloud-automation.md)。
+>
+> 英文版是 [`deploy-to-vps.md`](./deploy-to-vps.md)，內容相同。
 
 ---
 
@@ -155,10 +162,23 @@ openssl rand -base64 48   # SECRET_KEY 用
 ### 3. 啟動服務
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+bash scripts/deploy.sh
 ```
 
+用 `deploy.sh` 而不要直接 `docker compose up -d`：它會先只起 postgres、等它
+healthy、跑 `alembic upgrade head` 建表，最後才把其他服務拉起來。順序很重要——
+api 不該對著還沒有表的資料庫發第一批查詢。
+
 第一次 build 約 3-5 分鐘（下載 node/python image + 編譯前端）。
+
+**如果資料庫比 Alembic 還早存在**（當初是 `create_all()` 建的），
+`alembic upgrade head` 會撞 `DuplicateTableError: relation "stocks" already exists`。
+先把 baseline 記成「已套用」但不執行，再跑後續的 migration：
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm --no-deps api alembic stamp 0944c4e72b5a
+docker compose -f docker-compose.prod.yml run --rm --no-deps api alembic upgrade head
+```
 
 確認狀態：
 
@@ -201,7 +221,25 @@ curl https://stockradar.tw/api/health
 {"status": "ok", "timestamp": "2026-05-09T12:00:00"}
 ```
 
-打開瀏覽器：`https://stockradar.tw` → 看到選股雷達介面
+所有資料端點都要求登入，所以沒帶 token 應該被擋：
+
+```bash
+curl -s -o /dev/null -w "%{http_code}
+" https://stockradar.tw/api/screen
+# 預期：401
+```
+
+打開瀏覽器：`https://stockradar.tw`。先用 UI 註冊一個帳號，再把它升成管理員——
+第一個管理員沒有別人能核准他：
+
+```bash
+docker compose -f docker-compose.prod.yml exec api     python -m scripts.make_admin you@example.com
+```
+
+`make_admin` 會一併把帳號設成 active。之後新的申請會出現在 UI 的「帳號管理」，
+核准時會寄信通知申請人——前提是 `.env` 有設 `RESEND_API_KEY` 或
+`SMTP_USER` / `SMTP_PASS`。兩個都沒設的話核准照樣成功，只是信會被跳過，
+log 裡留一筆 WARNING。
 
 ---
 

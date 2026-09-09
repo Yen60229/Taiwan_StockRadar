@@ -41,16 +41,23 @@
 
 **P0 風險(Phase 1 必修,詳見 `01-backend.md` / `03-cloud-devops.md`)**:
 
-| # | 問題 | 影響 |
-|---|---|---|
-| 1 | scheduler cron 拿不到環境變數(Debian cron 不繼承 daemon env) | **排程實際上每次都失敗**,現有資料可能不完整 |
-| 2 | 非交易日執行時以 `date.today()` 寫入 | 週末假資料污染時序表 |
-| 3 | `SECRET_KEY` 有 `change-me-in-production` fallback | 環境變數未設時任何帳號可被偽造 |
-| 4 | production 無任何建表路徑(`init_db()` 在 prod 被跳過、無 Alembic) | 上線即卡死 |
-| 5 | 偽造 token 觸發 500(`UUID()` ValueError 未捕捉)、註冊 race condition、python-jose CVE | 安全與穩定性 |
-| 6 | 零測試、無 lockfile、無 CI | 任何修改都不可驗證 |
-| 7 | prod compose 掛 bind mount、容器跑 root、dev compose 5432/8000 全網暴露 | 部署安全 |
-| 8 | 無備份 | 一次磁碟故障 = 專案歸零 |
+> 這 8 條是 2026-07 評估時的狀態,**已於 2026-09-07 全數修復**(逐項驗證見
+> [`05-review-2026-09.md`](./05-review-2026-09.md));第 4 條的 Alembic 於 2026-09-08 完成。
+> 表格保留原文,是為了對照當初的判斷與後來的實際修法。
+
+| # | 問題 | 影響 | 現況 |
+|---|---|---|---|
+| 1 | scheduler cron 拿不到環境變數(Debian cron 不繼承 daemon env) | **排程實際上每次都失敗**,現有資料可能不完整 | ✅ `cron_entry.sh` 先寫 `/etc/stockradar.env`,各 `run_*.sh` source 它 |
+| 2 | 非交易日執行時以 `date.today()` 寫入 | 週末假資料污染時序表 | ✅ 日期一律取自 API payload,解析不出來就讓 pipeline 失敗 |
+| 3 | `SECRET_KEY` 有 `change-me-in-production` fallback | 環境變數未設時任何帳號可被偽造 | ✅ 樣板值直接拒絕啟動 |
+| 4 | production 無任何建表路徑(`init_db()` 在 prod 被跳過、無 Alembic) | 上線即卡死 | ✅ Alembic,`deploy.sh` 在起服務前跑 `upgrade head` |
+| 5 | 偽造 token 觸發 500(`UUID()` ValueError 未捕捉)、註冊 race condition、python-jose CVE | 安全與穩定性 | ✅ 前兩者已修;python-jose → PyJWT 仍待做(ADR-11) |
+| 6 | 零測試、無 lockfile、無 CI | 任何修改都不可驗證 | ✅ pytest + GitHub Actions,含對真實 PostgreSQL 的測試 |
+| 7 | prod compose 掛 bind mount、容器跑 root、dev compose 5432/8000 全網暴露 | 部署安全 | ✅ 已修 |
+| 8 | 無備份 | 一次磁碟故障 = 專案歸零 | ✅ 每日 `pg_dump` + 還原演練(RTO 3 秒) |
+
+**目前的主要待辦**:管理員 2FA 與速率限制([`06-auth-hardening.md`](./06-auth-hardening.md) M2 / M3)、
+python-jose → PyJWT、異地備份、監控。
 
 ## 3. 核心原則
 

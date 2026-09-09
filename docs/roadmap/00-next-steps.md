@@ -4,9 +4,25 @@
 > 每一步只講做什麼、為什麼、去哪裡學；細節自己查得到就不寫。
 > 順序就是優先序：**先上線 → 補資料缺口 → 加融資副圖 → 接回藍圖 Phase 1**。
 
+## 進度（2026-09-10）
+
+| Step | 狀態 |
+|---|---|
+| Step 1 上線 Ampere | ✅ 完成，站台已在 HTTPS 上運作 |
+| Step 2 外資 / 投信資料缺口 | 🚧 個股頁的圖表已改長條圖並可切換單一法人；Dashboard 欄位、外資持股改每日、投信持股仍未做 |
+| Step 3 融資餘額副圖 | ⬜ 未開始 |
+| Step 4 接回藍圖 | 🚧 `06-auth-hardening` 的 M0 / M1 已完成上線，M2 / M3 未開始 |
+
+上線後另外處理掉的事（不在原本清單裡）：
+
+- **TWSE 收盤價一直慢一天**：舊程式用 `openapi.twse.com.tw` 的 `STOCK_DAY_ALL`，
+  那支端點的資料**永遠只到前一交易日**。改用官網 `MI_INDEX` 之後才拿得到當天。
+  上櫃（TPEX）與三大法人（T86）本來就走官網 API，所以只有上市股票中招。
+  細節見 README 的 design decisions 一節。
+
 ---
 
-## Step 1｜把 StockRadar 搬上 Ampere（目標：1–2 週）
+## Step 1｜把 StockRadar 搬上 Ampere ✅ 已完成
 
 搶到的規格是 **2 OCPU / 12 GB ARM**，跑 Docker 完全夠。
 
@@ -17,7 +33,7 @@
 | 3 | **開 80/443**：Console VCN → Security List 加 Ingress 80/443（**必做**）。VM 內的 iptables 通常不用動——Docker 發布的 port 走 DOCKER chain，會繞過 Oracle image 預設的 INPUT REJECT 規則；若開完 Security List 仍不通，再補 `iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT`（443 同）+ `netfilter-persistent save` | 最多人卡在忘了開 Security List |
 | 4 | 弄一個網域，A record 指到 VM IP | Caddy 要有網域才能自動拿 HTTPS 憑證；免費用 DuckDNS，便宜買用 Cloudflare |
 | 5 | `git clone` → 建 `.env`（DOMAIN / DB_PASSWORD / SECRET_KEY / TLS_EMAIL） | `.env` 永遠不進 git |
-| 6 | `bash scripts/deploy.sh --init`（第一次）→ 填 `.env` → 再跑一次 | 會 build、啟動、等 DB 就緒、**自動建表**（prod 不會自己 create_all）。base image 都有 arm64 版，不用改 |
+| 6 | `bash scripts/deploy.sh --init`（第一次）→ 填 `.env` → 再跑一次 | 會 build、先只起 postgres、等它 healthy、跑 `alembic upgrade head` 建表，最後才把其他服務拉起來（順序很重要：api 不該對著還沒有表的 DB 發第一批查詢）。base image 都有 arm64 版，不用改 |
 | 7 | `docker compose -f docker-compose.prod.yml exec api python scripts/backfill_history.py` | 先補 2 個月歷史讓 20 日均量準 |
 | 8 | 跑一次清理 SQL（`05-review-2026-09.md` 附錄）→ `SKIP_EMAIL=1 sh scripts/run_now.sh` | 先清掉舊的週末污染列，再跑當日；測試跑加 `SKIP_EMAIL=1` 才不會寄週報給訂閱者 |
 | 9 | 驗收：瀏覽器開 `https://你的網域`、`/api/screen` 有資料、`docker compose ps` 全 Up | |
@@ -55,6 +71,11 @@ FROM ownership_ratios;
 ```
 
 **要做的三件事（由易到難）**
+
+> 2026-09-10 補充：個股頁的法人圖已經從折線改成長條，並且可以單看外資 / 投信 /
+> 自營 / 合計，或四組並列（`frontend/src/components/InstFlowChart.tsx`）。
+> 下面第 1 點講的是 **Dashboard 表格**的欄位，那個還沒做。
+
 1. **Dashboard 加「外資買賣超 / 投信買賣超」兩欄**：`frontend/src/pages/DashboardPage.tsx` 的 `columns` 陣列加兩筆（key = `foreign_net` / `trust_net`，單位張，正綠負紅），資料已經在 `ScreenItem` 裡。半天。
 2. **外資持股改用證交所每日資料**：TWSE「外資及陸資投資持股統計」有 JSON（報表代號 `MI_QFIIS`，每日、每檔都有持有股數與持股比率），比 HiStock 每週一筆穩定、也不怕被擋。新開一個 scraper，寫進 `ownership_ratios`（或另開每日表）。1–2 天。
 3. **投信持股**：兩條路——(a) 用「投信買賣超累計」推估，畫面標明是估算；(b) 直接用 FinMind API（免費、有現成資料集，一次解決外資 / 投信 / 融資），少寫三支爬蟲。先做 (b) 試水溫最省力。
@@ -85,7 +106,7 @@ FROM ownership_ratios;
 
 **兩個要先想清楚的點**
 - **時間粒度要一致**：融資餘額是每日，外資持股若還是 HiStock 每週一筆，副圖會變成階梯線很難看 → 所以 Step 2 的第 2 件事（改每日）要先做。
-- **主圖現在不存在**：StockPage 只有法人折線圖，沒有價格圖。要有「副圖」概念得先補主圖（收盤價 `daily_quotes` 已經在 DB，只差 API 回傳）。
+- **主圖現在不存在**：StockPage 只有法人長條圖，沒有價格圖。要有「副圖」概念得先補主圖（收盤價 `daily_quotes` 已經在 DB，只差 API 回傳）。
 
 **學習資源**
 - recharts 雙軸範例：recharts.org/en-US/examples/LineBarAreaComposedChart（直接改 dataKey 就能用）
@@ -97,7 +118,11 @@ FROM ownership_ratios;
 
 8 個 P0 已於 2026-09-07 全數完成（見 `05-review-2026-09.md`）：70 個離線測試 + CI 四個 job、備份與還原演練（RTO 3 秒）、平日 18:00 全市場更新。
 
-**下一個工作項目：[`06-auth-hardening.md`](./06-auth-hardening.md)**——站台目前「知道網址就連得到」，API 端沒有門。依該文件的 M0 → M1 → M2 → M3 進行；M0 順便把 Phase 1 欠著的 Alembic 與 DB 測試地基補上。
+**[`06-auth-hardening.md`](./06-auth-hardening.md) 的 M0 與 M1 已於 2026-09-08 / 09-09 完成上線**：
+Alembic migrations、對真實 PostgreSQL 的測試地基、註冊核准制、管理後台、
+所有資料端點要求登入。「知道網址就連得到」已經解決。
+
+**下一個工作項目**：同一份文件的 M2（管理員 TOTP 兩步驟驗證）與 M3（速率限制、審計 log）。
 
 其後照藍圖 Phase 2：python-jose → PyJWT（ADR-11）、異地備份（R2）、監控。
 
@@ -106,10 +131,13 @@ FROM ownership_ratios;
 ## 一頁總覽
 
 ```
-Week 1–2   上線 Ampere（Docker / 開 port / 網域 / Caddy / 建表 / backfill）
-Week 3     Dashboard 加買賣超欄位 → 外資持股改證交所每日 → 投信持股（FinMind 試水）
-Week 4–5   融資餘額 scraper + 表 + 個股頁主圖 / 副圖
-Week 6+    06-auth-hardening：M0 Alembic + DB 測試 → M1 關門(核准制) → M2 管理員 2FA → M3 rate limit
+✅ 上線 Ampere（Docker / 開 port / 網域 / Caddy / migrations / backfill）
+✅ 06-auth-hardening M0：Alembic + DB 測試地基
+✅ 06-auth-hardening M1：註冊核准制、管理後台、API 全面要求登入
+✅ 個股頁法人圖改長條、可切換單一法人
+⬜ Dashboard 加買賣超欄位 → 外資持股改證交所每日 → 投信持股（FinMind 試水）
+⬜ 融資餘額 scraper + 表 + 個股頁主圖 / 副圖
+⬜ 06-auth-hardening M2 管理員 2FA → M3 rate limit
 ```
 
-*建立：2026-08*
+*建立：2026-08 · 最後更新：2026-09-10*

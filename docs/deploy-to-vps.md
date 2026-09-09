@@ -1,6 +1,15 @@
-# Deploy to a VPS (Hetzner + Caddy)
+# Deploy to a VPS (Caddy + Docker Compose)
 
 From a fresh server to HTTPS in about 30 minutes.
+
+> **Where this project actually runs:** an Oracle Cloud Always Free Ampere A1
+> instance (2 OCPU / 12 GB, ARM), not Hetzner. The steps below are the generic
+> VPS path and work on either. For the Oracle-specific parts — security lists
+> instead of just UFW, the ARM base images, and the retry script for the
+> "out of capacity" errors — see
+> [`oracle-cloud-automation.md`](./oracle-cloud-automation.md).
+>
+> The Chinese walkthrough [`部署到VPS.md`](./部署到VPS.md) covers the same ground.
 
 ---
 
@@ -96,11 +105,26 @@ EMAIL_FROM=report@your-domain.com
 ```
 
 ```bash
-# Start all services
-docker compose -f docker-compose.prod.yml up -d --build
+# Build, migrate, and start everything
+bash scripts/deploy.sh
 ```
 
+Use `deploy.sh` rather than `docker compose up -d` directly. It starts PostgreSQL
+on its own first, waits until it reports healthy, runs `alembic upgrade head`, and
+only then brings up the rest — the API should never issue its first queries against
+a database that has no tables yet.
+
 First build takes 3–5 minutes (downloads images and compiles the frontend). After that, Caddy automatically requests a certificate. The site goes live within ~30 seconds.
+
+**Deploying onto a database that predates Alembic?** `alembic upgrade head` will fail
+with `DuplicateTableError: relation "stocks" already exists`, because the baseline
+migration tries to create tables that are already there. Record the baseline as
+applied without running it, then migrate:
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm --no-deps api alembic stamp 0944c4e72b5a
+docker compose -f docker-compose.prod.yml run --rm --no-deps api alembic upgrade head
+```
 
 Check service status:
 
@@ -142,7 +166,26 @@ curl https://your-domain.com/api/health
 # (Do NOT use /healthz here: behind Caddy it hits nginx's SPA fallback and always returns 200)
 ```
 
-Open `https://your-domain.com` in a browser — you should see the dashboard.
+Every data endpoint requires a logged-in account, so an unauthenticated request
+should be rejected:
+
+```bash
+curl -s -o /dev/null -w "%{http_code}
+" https://your-domain.com/api/screen
+# Expected: 401
+```
+
+Open `https://your-domain.com` in a browser. Register an account through the UI,
+then promote it — the first admin can't wait for someone else to approve them:
+
+```bash
+docker compose -f docker-compose.prod.yml exec api     python -m scripts.make_admin you@example.com
+```
+
+`make_admin` also flips the account to active. After that, new applications show up
+under 帳號管理 in the UI, and approving one emails the applicant — provided
+`RESEND_API_KEY` or `SMTP_USER`/`SMTP_PASS` is set. With neither, approval still
+works; the mail is just skipped with a warning in the log.
 
 ---
 

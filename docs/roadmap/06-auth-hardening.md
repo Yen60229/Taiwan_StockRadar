@@ -5,10 +5,17 @@
 >
 > 定位：這是藍圖 Phase 2「可靠性與開放註冊」裡 auth 工作的具體規格，
 > 與 ADR-6（token 存放策略）、補強-3（email 驗證 / 忘記密碼 / 刪帳號）並行不衝突。
+>
+> **進度（2026-09-09）**：M0、M1 已完成並部署到 production。
+> 「知道網址就連得到」這個原始問題已經關掉——所有資料端點都要求登入，
+> 註冊改為待審核。M2（管理員 2FA）與 M3（速率限制、審計 log）尚未開始。
 
 ---
 
 ## 0. 現況：門其實沒關
+
+> 以下是 2026-09 動工前的狀態，保留原文當作對照。第 1、2 點已由 M1 解決，
+> 第 3 點（管理員只靠密碼）與速率限制仍然成立，是 M2 / M3 要處理的。
 
 | 面向 | 現況 | 風險 |
 |---|---|---|
@@ -207,15 +214,17 @@ POST /api/auth/login  {email, password}
 
   > ✅ **2026-09-09 已在 Oracle 上對真實 PostgreSQL 驗證完畢**（拋棄式 container，不碰 production）：`verify_migration_schema.py` 回報 `SCHEMA MATCHES`。過程中抓到 verify 腳本自己的 3 個假陽性並修掉（DateTime 型別裸 `str()` 誤判、UniqueConstraint 背後的隱含索引誤判、alembic_version 誤判成多餘表；型別比對的空格分詞也修了兩輪），每個都補了離線回歸測試（`tests/test_verify_migration_schema.py`）鎖住。`test_db_smoke.py` 五個測試由 GitHub Actions CI 執行（production image 刻意不含 pytest/tests/，見 `.dockerignore`）。
 
-### M1｜先把門關上（~10h）—— 做完這步「知道網址就連得到」就解決了
-- [ ] migration：`role` / `status` / `approved_*` / `last_login_at`
-- [ ] `register` 改為建立 `pending`、不回 token；`login` 檢查 `status`
-- [ ] 所有資料 API 改 `get_current_user`（D1=a）
-- [ ] `scripts/make_admin.py`
-- [ ] `/api/admin/users` 三個端點 + `require_admin` dependency
-- [ ] 前端：註冊後訊息、`pending` 訊息、`AdminPage`、`AdminRoute`、`LandingPage`（D1=a）
-- [ ] 通知信：申請 → 管理員、核准 → 使用者（用 Gmail SMTP，D3）
-- [ ] 測試：register 不回 token、pending 登入 403、非 admin 打 admin 端點 403、核准後可登入、admin 不能停用自己
+### M1｜先把門關上（~10h）—— 做完這步「知道網址就連得到」就解決了 ✅ **2026-09-09 完成並上線**
+- [x] migration：`role` / `status` / `approved_at` / `approved_by` / `last_login_at`。角色與狀態用 `String(16)` + CHECK 約束而不是 PG ENUM——之後要加狀態只要改 CHECK，不必動型別。migration 最後一行 `UPDATE users SET status='active' WHERE status='pending'`，否則既有使用者會在部署當下被鎖在門外
+- [x] `register` 改為建立 `pending`、不回 token（`RegisterResponse` 這個型別裡根本沒有 token 欄位，是型別層級擋掉，不是靠記得不要填）；`login` **先驗密碼再檢查 status**——順序反過來的話，密碼錯誤與帳號待審會回不同錯誤碼，等於送人一支帳號列舉工具
+- [x] 所有資料 API 改 `get_current_user`（D1=a）。狀態檢查放在 `get_current_user` 而不是只在登入時做：token 有效期 7 天，停權必須立刻生效
+- [x] `scripts/make_admin.py`（只走 CLI，沒有對應的 API——沒有端點就沒有端點會被打）
+- [x] `/api/admin/users` 列表 + 核准 / 拒絕 / 停用 / 啟用 + `require_admin` dependency；管理員不能對自己動作
+- [x] 前端：註冊後的送出訊息、`pending` 提示、`AdminPage`、`AdminRoute`、Dashboard 的管理入口
+- [x] 通知信：申請 → 管理員、核准 → 使用者。寄信包在 `asyncio.to_thread` 裡，而且**寄失敗不會讓核准這件事失敗**——沒設定寄信管道時只記一筆 WARNING 就跳過
+- [x] 測試：20 個資料庫測試，涵蓋 register 不回 token、pending / rejected / disabled 各自的錯誤碼、對 pending 帳號打錯密碼要回 401 而不是 403（不洩漏狀態）、**停用後手上的舊 token 立刻失效**、四個資料端點未登入都是 401、非 admin 打管理端點 403、admin 不能停用自己，以及掃 OpenAPI 確認沒有任何「升級成 admin」的端點
+
+  > 部署時踩到的坑：production 的資料庫早於 Alembic（當初是 `create_all()` 建的），直接 `alembic upgrade head` 會撞 `DuplicateTableError: relation "stocks" already exists`。標準解法是先 `alembic stamp <baseline revision>` 把 baseline 記成「已套用」，再 `upgrade head` 只跑真正新的 migration。這是把 Alembic 導入既有資料庫的通用做法，值得記下來。
 
 ### M2｜管理員 2FA（~12h）
 - [ ] migration：`totp_secret_enc` / `totp_enabled` / `recovery_codes`
