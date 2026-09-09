@@ -1,11 +1,16 @@
 """
 StockRadar - TWSE 上市股票爬蟲
-資料來源：台灣證券交易所 OpenAPI (openapi.twse.com.tw)
+資料來源：台灣證券交易所官網 API (www.twse.com.tw/rwd)
 抓取項目：
-  1. 全部上市股票當日行情（STOCK_DAY_ALL）
+  1. 全部上市股票當日行情（afterTrading/MI_INDEX）
   2. 個股近 N 日歷史行情（計算均量）
   3. 三大法人買賣超（T86，www.twse.com.tw/rwd）
   4. 上市公司基本資料（產業分類）
+
+⚠️ 不要把當日行情改回 openapi.twse.com.tw 的 STOCK_DAY_ALL：
+   那支端點**固定只有前一交易日的資料**（2026-09-10 實測：9/9 收盤後
+   等到隔天凌晨，它回報的仍是 9/8），會讓上市股票的收盤價永遠慢一天。
+   官網 www.twse.com.tw 的 API 才是當天就更新的，跟 T86 同一家族。
 """
 import asyncio
 import logging
@@ -46,7 +51,8 @@ def map_industry(code: str) -> str:
 
 
 # ── 常數 ─────────────────────────────────────────────────────
-BASE_URL = "https://openapi.twse.com.tw/v1"
+BASE_URL = "https://openapi.twse.com.tw/v1"   # 僅個股歷史（STOCK_DAY）仍用它
+MI_INDEX_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
 AVG_VOL_DAYS = 20          # 均量計算天數
 MIN_AVG_VOL  = 2000        # 篩選門檻（張）
 REQUEST_TIMEOUT = 30       # 秒
@@ -66,6 +72,25 @@ def _roc_to_date(roc: str) -> Optional[date]:
         s = str(roc).strip()
         return date(int(s[:-4]) + 1911, int(s[-4:-2]), int(s[-2:]))
     except (ValueError, TypeError):
+        return None
+
+
+_TITLE_DATE_RE = re.compile(r"(\d{2,3})年(\d{1,2})月(\d{1,2})日")
+
+
+def _parse_title_date(title: Optional[str]) -> Optional[date]:
+    """
+    從 MI_INDEX 表格標題取交易日：
+      '115年09月09日 每日收盤行情(...)' → date(2026, 9, 9)
+    解析不出來回 None，由呼叫端決定要不要 raise（一樣不 fallback 到 today）。
+    """
+    m = _TITLE_DATE_RE.search(title or "")
+    if not m:
+        return None
+    roc_y, mm, dd = (int(g) for g in m.groups())
+    try:
+        return date(roc_y + 1911, mm, dd)
+    except ValueError:
         return None
 
 
@@ -104,29 +129,102 @@ async def fetch_json(client: httpx.AsyncClient, url: str, params: dict = None) -
 
 
 # ── 1. 當日所有上市股票行情 ───────────────────────────────────
-async def fetch_all_quotes(client: httpx.AsyncClient) -> pd.DataFrame:
+QUOTE_COLUMNS = ["code", "name", "market", "trade_date",
+                 "open", "high", "low", "close", "volume"]
+
+# MI_INDEX 回傳的是「多張表」，每日收盤行情只是其中一張（其他是各種指數、
+# 漲跌家數統計）。用欄位而不是固定 index 去認表：TWSE 增減表格時 index 會位移。
+_QUOTE_TABLE_KEY_FIELD = "證券代號"
+
+_MI_INDEX_COL_MAP = {
+    "證券代號": "code",
+    "證券名稱": "name",
+    "開盤價":   "open",
+    "最高價":   "high",
+    "最低價":   "low",
+    "收盤價":   "close",
+    "成交股數": "volume_shares",   # 股，稍後 ÷1000 轉張
+}
+
+
+QUOTE_LOOKBACK_DAYS = 8    # 連假最長約 5-6 天，8 天有安全邊際
+
+
+async def fetch_all_quotes(
+    client: httpx.AsyncClient,
+    target: Optional[date] = None,
+) -> pd.DataFrame:
     """
-    回傳欄位：code, name, close, open, high, low, volume, trade_date
+    抓最近一個交易日（從 target／今天往前找）的全部上市股票收盤行情。
+    回傳欄位：code, name, market, trade_date, open, high, low, close, volume
     volume 單位：張
+
+    來源是官網 afterTrading/MI_INDEX——**當天盤後就有資料**。
+    （舊版用 openapi 的 STOCK_DAY_ALL，那支永遠只有前一交易日，見模組 docstring。）
+
+    往前找的理由：MI_INDEX 是「查某一天」的 API，假日查不到東西。
+    週末的完整 pipeline 需要拿到最近一個交易日的行情，所以比照 T86
+    （fetch_institutional_flow）往前搜。trade_date 一律取自 payload 標題，
+    不會因為往前找就把日期標錯。
     """
-    url = f"{BASE_URL}/exchangeReport/STOCK_DAY_ALL"
-    data = await fetch_json(client, url)
-    df = pd.DataFrame(data)
+    target = target or date.today()
 
-    # 欄位對應
-    col_map = {
-        "Code":         "code",
-        "Name":         "name",
-        "ClosingPrice": "close",
-        "OpeningPrice": "open",
-        "HighestPrice": "high",
-        "LowestPrice":  "low",
-        "TradeVolume":  "volume_shares",  # 股（先保留）
-        "TradeValue":   "trade_value",
-    }
-    df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+    for days_back in range(QUOTE_LOOKBACK_DAYS):
+        day = target - timedelta(days=days_back)
+        df = await fetch_all_quotes_on(client, day)
+        if not df.empty:
+            return df
 
-    # 數值清洗
+    logger.warning(
+        f"[TWSE] MI_INDEX 往前找 {QUOTE_LOOKBACK_DAYS} 天（至 {target}）都沒有行情資料"
+    )
+    return pd.DataFrame(columns=QUOTE_COLUMNS)
+
+
+async def fetch_all_quotes_on(
+    client: httpx.AsyncClient,
+    target: date,
+) -> pd.DataFrame:
+    """
+    抓「指定日期」的上市收盤行情；非交易日回空 DataFrame（不往前找、不 raise）。
+    """
+    data = await fetch_json(client, MI_INDEX_URL, params={
+        "date":     target.strftime("%Y%m%d"),
+        "type":     "ALLBUT0999",   # 全部，不含權證/牛熊證
+        "response": "json",
+    })
+
+    tables = data.get("tables") if isinstance(data, dict) else None
+    if not tables:
+        logger.debug(f"[TWSE] MI_INDEX {target} 無資料（非交易日）")
+        return pd.DataFrame(columns=QUOTE_COLUMNS)
+
+    quote_table = next(
+        (t for t in tables if _QUOTE_TABLE_KEY_FIELD in (t.get("fields") or [])),
+        None,
+    )
+    if quote_table is None:
+        # 假日也可能回了幾張表卻沒有收盤行情表，所以這裡不 raise；
+        # 但用 WARNING 留痕，萬一是 TWSE 改版導致認不到表，log 裡看得出來。
+        logger.warning(
+            f"[TWSE] MI_INDEX {target} 有 {len(tables)} 張表，"
+            f"但找不到含「{_QUOTE_TABLE_KEY_FIELD}」的收盤行情表"
+        )
+        return pd.DataFrame(columns=QUOTE_COLUMNS)
+
+    # 交易日取自表格標題（不是 date.today()，也不是我們送出去的 target）：
+    # 維持 P0-2「日期一律以 payload 為準」的原則。
+    trade_date = _parse_title_date(quote_table.get("title"))
+    if trade_date is None:
+        raise ValueError(
+            f"[TWSE] MI_INDEX 表格標題解析不出交易日，拒絕以今日日期寫入："
+            f"{quote_table.get('title')!r}"
+        )
+
+    df = pd.DataFrame(quote_table.get("data") or [], columns=quote_table["fields"])
+    df = df.rename(columns={k: v for k, v in _MI_INDEX_COL_MAP.items() if k in df.columns})
+
+    # 數值清洗（TWSE 用逗號分位，停牌股會是 "--"）
     for col in ["close", "open", "high", "low"]:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col].astype(str).str.replace(",", ""), errors="coerce")
@@ -137,16 +235,15 @@ async def fetch_all_quotes(client: httpx.AsyncClient) -> pd.DataFrame:
         )
         df["volume"] = (df["volume_shares"] / 1000).round(0).astype("Int64")  # 股 → 張
 
-    # 交易日以 payload 的 Date 為準（非 date.today()）：週末跑到的是週五資料
-    df["trade_date"] = _payload_trade_date(df, "TWSE")
+    df["trade_date"] = trade_date
     df["market"] = "TWSE"
 
     # 只保留普通股（代號為 4 位數字）
     df = df[df["code"].str.match(r"^\d{4}$", na=False)].copy()
     df = df.dropna(subset=["close", "volume"])
 
-    logger.info(f"[TWSE] 當日行情：{len(df)} 檔上市股票")
-    return df[["code", "name", "market", "trade_date", "open", "high", "low", "close", "volume"]]
+    logger.info(f"[TWSE] 當日行情：{len(df)} 檔上市股票（交易日 {trade_date}）")
+    return df[QUOTE_COLUMNS]
 
 
 # ── 2. 個股歷史日行情（計算均量用） ──────────────────────────
