@@ -26,7 +26,11 @@ services:
       DATABASE_URL: postgresql://stockradar:${DB_PASSWORD:-stockradar_dev_pw}@postgres:5432/stockradar
       SECRET_KEY: ${SECRET_KEY:?SECRET_KEY 未設定，請在 .env 填入（openssl rand -base64 48）}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
       EMAIL_FROM: ${EMAIL_FROM:-report@stockradar.tw}
+      EMAIL_ADMIN: ${EMAIL_ADMIN:-}
+      DOMAIN: ${DOMAIN:-localhost:3000}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       APP_ENV: ${APP_ENV:-development}
       TZ: Asia/Taipei
@@ -52,7 +56,11 @@ services:
     environment:
       DATABASE_URL: postgresql://stockradar:${DB_PASSWORD:-stockradar_dev_pw}@postgres:5432/stockradar
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
       EMAIL_FROM: ${EMAIL_FROM:-report@stockradar.tw}
+      EMAIL_ADMIN: ${EMAIL_ADMIN:-}
+      DOMAIN: ${DOMAIN:-localhost:3000}
       TZ: Asia/Taipei
     volumes:
       - ./backend:/app

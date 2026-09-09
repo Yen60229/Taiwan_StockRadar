@@ -14,6 +14,8 @@
 import asyncio
 import logging
 import os
+from html import escape
+from urllib.parse import quote
 
 from notifier.send_email import (
     EMAIL_ADMIN, RESEND_API_KEY, SMTP_PASS, SMTP_USER,
@@ -56,20 +58,41 @@ async def _send(to_email: str, subject: str, html: str) -> bool:
 
 
 async def notify_admins_new_registration(
-    admin_emails: list[str], applicant_email: str, applicant_name: str | None
+    admin_emails: list[str],
+    applicant_email: str,
+    applicant_name: str | None,
+    applicant_id: str | None = None,
 ) -> None:
-    """有人申請帳號 → 通知管理員去審核"""
+    """
+    有人申請帳號 → 通知管理員去審核。
+
+    信裡的連結帶上 `?user=<id>`，管理後台會把那一筆標示出來，
+    不用在清單裡自己找。這個連結**不帶任何權限**——它只是「開到這一頁」，
+    沒登入一樣會被擋在登入頁，核准的權限檢查仍然在後端的 require_admin。
+    刻意不做成「點了就核准」的免登入連結：那等於把核准權限放進信箱，
+    信件被轉寄或信箱被入侵就等於帳號審核形同虛設。
+    """
     targets = [e for e in admin_emails if e] or ([EMAIL_ADMIN] if EMAIL_ADMIN else [])
     if not targets:
         logger.warning("[Notify] 找不到任何管理員信箱，略過新申請通知")
         return
 
     who = f"{applicant_name}（{applicant_email}）" if applicant_name else applicant_email
+    link = f"{_site_url()}/admin"
+    if applicant_id:
+        link = f"{link}?user={quote(str(applicant_id))}"
+
     html = f"""
     <h3>StockRadar 有新的帳號申請</h3>
-    <p><b>申請人：</b>{who}</p>
-    <p>到管理後台審核：<a href="{_site_url()}/admin">{_site_url()}/admin</a></p>
-    <p style="color:#888;font-size:12px">在你核准之前，這個帳號無法登入或讀取任何資料。</p>
+    <p><b>申請人：</b>{escape(who)}</p>
+    <p><a href="{link}"
+          style="display:inline-block;padding:10px 20px;background:#00a8d4;
+                 color:#fff;border-radius:6px;text-decoration:none;font-weight:700">
+       前往審核</a></p>
+    <p style="color:#888;font-size:12px">
+      需要先登入管理員帳號；登入後會直接標示出這一筆申請。<br>
+      在你核准之前，這個帳號無法登入或讀取任何資料。
+    </p>
     """
     for email in targets:
         await _send(email, "[StockRadar] 有新的帳號申請待審核", html)
@@ -77,10 +100,17 @@ async def notify_admins_new_registration(
 
 async def notify_user_approved(user_email: str, user_name: str | None) -> None:
     """管理員核准 → 通知申請人可以登入了"""
-    hello = f"{user_name} 你好" if user_name else "你好"
+    hello = f"{escape(user_name)} 你好" if user_name else "你好"
+    login_url = f"{_site_url()}/login"
     html = f"""
     <h3>你的 StockRadar 帳號已開通</h3>
     <p>{hello}，你的帳號申請已通過審核，現在可以登入使用了。</p>
-    <p><a href="{_site_url()}/login">{_site_url()}/login</a></p>
+    <p><a href="{login_url}"
+          style="display:inline-block;padding:10px 20px;background:#00a8d4;
+                 color:#fff;border-radius:6px;text-decoration:none;font-weight:700">
+       前往登入</a></p>
+    <p style="color:#888;font-size:12px">
+      按鈕打不開的話，直接複製這個網址：{login_url}
+    </p>
     """
     await _send(user_email, "[StockRadar] 帳號已開通", html)

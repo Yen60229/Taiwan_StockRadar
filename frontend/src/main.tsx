@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import "./index.css";
 
@@ -14,9 +14,16 @@ const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 60_000, retry: 1 } },
 });
 
+/**
+ * 未登入就導去登入頁，並把「本來想去哪」記在 location state 裡，
+ * 登入成功後再送回去。信件裡的 /admin?user=xxx 連結就是靠這個
+ * 才不會在登入之後掉到首頁、把連結的用意弄丟。
+ */
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const token = useAuth((s) => s.token);
-  return token ? <>{children}</> : <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (token) return <>{children}</>;
+  return <Navigate to="/login" replace state={{ from: location }} />;
 }
 
 /**
@@ -27,7 +34,8 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const token = useAuth((s) => s.token);
   const user  = useAuth((s) => s.user);
-  if (!token) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  if (!token) return <Navigate to="/login" replace state={{ from: location }} />;
   return user?.role === "admin" ? <>{children}</> : <Navigate to="/" replace />;
 }
 

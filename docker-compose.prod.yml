@@ -42,8 +42,15 @@ services:
     environment:
       DATABASE_URL: postgresql://stockradar:${DB_PASSWORD}@postgres:5432/stockradar
       SECRET_KEY: ${SECRET_KEY}
+      # 帳號通知信（申請 → 管理員、核准 → 使用者）是由 api 這個容器寄的，
+      # 所以寄信設定必須傳進來。少了 SMTP_* 的話，就算 .env 有填也等於沒填。
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
       EMAIL_FROM: ${EMAIL_FROM:-report@stockradar.tw}
+      EMAIL_ADMIN: ${EMAIL_ADMIN:-}
+      # 信件內容要組出 https://網域/admin 這種連結，所以 api 也需要 DOMAIN
+      DOMAIN: ${DOMAIN}
       CORS_ORIGINS: https://${DOMAIN}
       APP_ENV: production
       TZ: Asia/Taipei
@@ -62,9 +69,13 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://stockradar:${DB_PASSWORD}@postgres:5432/stockradar
+      # 週報也走同一套寄送管道，SMTP 是 Resend 的備援，兩邊都要給
       RESEND_API_KEY: ${RESEND_API_KEY:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
       EMAIL_FROM: ${EMAIL_FROM:-report@stockradar.tw}
       EMAIL_ADMIN: ${EMAIL_ADMIN:-}
+      DOMAIN: ${DOMAIN}
       TZ: Asia/Taipei
     volumes:
       - ./logs:/app/logs

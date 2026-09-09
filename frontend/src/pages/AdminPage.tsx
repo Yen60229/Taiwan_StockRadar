@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { adminApi, errMessage, type AdminUser } from "../api/client";
 import { useAuth } from "../store/auth";
@@ -17,7 +17,12 @@ export default function AdminPage() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const [tab, setTab] = useState<Tab>("pending");
+  const [searchParams] = useSearchParams();
+  // 從核准通知信的連結來的：?user=<id>，把那一筆標示出來。
+  // 純粹是「哪一筆」的提示，核准動作本身還是要手動按——
+  // 連結本身不帶任何權限。
+  const highlightId = searchParams.get("user");
+  const [tab, setTab] = useState<Tab>(highlightId ? "all" : "pending");
   const [err, setErr] = useState("");
 
   const { data: users = [], isLoading } = useQuery({
@@ -36,6 +41,10 @@ export default function AdminPage() {
   });
 
   const pendingCount = users.filter((u) => u.status === "pending").length;
+  // 被連結進來的那筆排到最前面，不用在清單裡自己找
+  const sortedUsers = highlightId
+    ? [...users].sort((a, b) => (a.id === highlightId ? -1 : b.id === highlightId ? 1 : 0))
+    : users;
 
   return (
     <div style={{ minHeight: "100vh", background: "#04080f" }}>
@@ -75,11 +84,12 @@ export default function AdminPage() {
           <Empty>{tab === "pending" ? "目前沒有待審核的申請 🎉" : "還沒有任何帳號"}</Empty>
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
-            {users.map((u) => (
+            {sortedUsers.map((u) => (
               <UserRow
                 key={u.id}
                 u={u}
                 isSelf={u.id === user?.id}
+                highlighted={u.id === highlightId}
                 busy={act.isPending}
                 onAct={(action) => act.mutate({ id: u.id, action })}
               />
@@ -91,9 +101,10 @@ export default function AdminPage() {
   );
 }
 
-function UserRow({ u, isSelf, busy, onAct }: {
+function UserRow({ u, isSelf, highlighted, busy, onAct }: {
   u: AdminUser;
   isSelf: boolean;
+  highlighted?: boolean;
   busy: boolean;
   onAct: (a: "approve" | "reject" | "disable" | "enable") => void;
 }) {
@@ -102,8 +113,16 @@ function UserRow({ u, isSelf, busy, onAct }: {
     <div style={{
       display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
       padding: "14px 18px", borderRadius: 12,
-      background: "rgba(0,130,255,.04)", border: "1px solid rgba(0,150,255,.14)",
+      background: highlighted ? "rgba(0,210,255,.10)" : "rgba(0,130,255,.04)",
+      border: `1px solid ${highlighted ? "rgba(0,210,255,.5)" : "rgba(0,150,255,.14)"}`,
+      boxShadow: highlighted ? "0 0 0 1px rgba(0,210,255,.3)" : "none",
     }}>
+      {highlighted && (
+        <span style={{
+          fontSize: 10.5, fontWeight: 700, padding: "2px 8px", borderRadius: 5,
+          background: "rgba(0,210,255,.18)", color: "#00d8ff", whiteSpace: "nowrap",
+        }}>來自通知信</span>
+      )}
       <div style={{ flex: 1, minWidth: 220 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 700, fontSize: 14, color: "#ddeeff" }}>{u.email}</span>

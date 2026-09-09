@@ -1,11 +1,16 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { authApi, errMessage } from "../api/client";
 import { useAuth } from "../store/auth";
 
 export default function LoginPage() {
   const nav = useNavigate();
+  const location = useLocation();
   const setAuth = useAuth((s) => s.setAuth);
+  // PrivateRoute / AdminRoute 被擋下來時會把原本的目的地放在這裡。
+  // 沒有的話（直接開登入頁）就回首頁。
+  const from = (location.state as { from?: { pathname: string; search: string } } | null)?.from;
+  const backTo = from ? `${from.pathname}${from.search ?? ""}` : "/";
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -32,7 +37,7 @@ export default function LoginPage() {
       } else {
         const data = await authApi.login({ email, password });
         setAuth(data.user, data.access_token);
-        nav("/");
+        nav(backTo, { replace: true });
       }
     } catch (e: any) {
       setErr(errMessage(e, "請檢查輸入內容"));

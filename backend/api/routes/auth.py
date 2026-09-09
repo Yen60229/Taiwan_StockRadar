@@ -55,7 +55,9 @@ async def register(
     admin_emails = (await db.execute(
         select(User.email).where(User.role == ROLE_ADMIN)
     )).scalars().all()
-    await notify_admins_new_registration(list(admin_emails), user.email, user.name)
+    await notify_admins_new_registration(
+        list(admin_emails), user.email, user.name, applicant_id=str(user.id)
+    )
 
     return RegisterResponse()
 
