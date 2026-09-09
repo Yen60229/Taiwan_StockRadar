@@ -3,9 +3,11 @@ StockRadar - TWSE 上市股票爬蟲
 資料來源：台灣證券交易所官網 API (www.twse.com.tw/rwd)
 抓取項目：
   1. 全部上市股票當日行情（afterTrading/MI_INDEX）
-  2. 個股近 N 日歷史行情（計算均量）
-  3. 三大法人買賣超（T86，www.twse.com.tw/rwd）
-  4. 上市公司基本資料（產業分類）
+  2. 三大法人買賣超（T86，www.twse.com.tw/rwd）
+  3. 上市公司基本資料（產業分類）
+
+20 日均量不在這裡算：個股歷史 API（STOCK_DAY）早已失效（302 → 404），
+改由 data_pipeline.compute_avg_vol_from_db() 直接從 DB 的歷史行情算。
 
 ⚠️ 不要把當日行情改回 openapi.twse.com.tw 的 STOCK_DAY_ALL：
    那支端點**固定只有前一交易日的資料**（2026-09-10 實測：9/9 收盤後
@@ -51,10 +53,7 @@ def map_industry(code: str) -> str:
 
 
 # ── 常數 ─────────────────────────────────────────────────────
-BASE_URL = "https://openapi.twse.com.tw/v1"   # 僅個股歷史（STOCK_DAY）仍用它
 MI_INDEX_URL = "https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX"
-AVG_VOL_DAYS = 20          # 均量計算天數
-MIN_AVG_VOL  = 2000        # 篩選門檻（張）
 REQUEST_TIMEOUT = 30       # 秒
 RETRY_COUNT = 3
 RETRY_DELAY = 5            # 秒
@@ -66,15 +65,6 @@ HEADERS = {
 
 
 # ── 日期工具 ──────────────────────────────────────────────────
-def _roc_to_date(roc: str) -> Optional[date]:
-    """民國日期字串（如 '1150904'）→ date；解析失敗回 None"""
-    try:
-        s = str(roc).strip()
-        return date(int(s[:-4]) + 1911, int(s[-4:-2]), int(s[-2:]))
-    except (ValueError, TypeError):
-        return None
-
-
 _TITLE_DATE_RE = re.compile(r"(\d{2,3})年(\d{1,2})月(\d{1,2})日")
 
 
@@ -92,19 +82,6 @@ def _parse_title_date(title: Optional[str]) -> Optional[date]:
         return date(roc_y + 1911, mm, dd)
     except ValueError:
         return None
-
-
-def _payload_trade_date(df: pd.DataFrame, source: str) -> date:
-    """
-    從 payload 的 Date 欄取交易日。
-    刻意不 fallback 到 date.today()：假日執行時 today() 不是交易日，
-    寫進去就是污染時序表（P0-2），寧可讓 pipeline 失敗。
-    """
-    if "Date" in df.columns and len(df):
-        d = _roc_to_date(df["Date"].iloc[0])
-        if d:
-            return d
-    raise ValueError(f"[{source}] 行情 payload 缺少可解析的 Date 欄位，拒絕以今日日期寫入")
 
 
 # ── HTTP 工具 ─────────────────────────────────────────────────
@@ -246,96 +223,7 @@ async def fetch_all_quotes_on(
     return df[QUOTE_COLUMNS]
 
 
-# ── 2. 個股歷史日行情（計算均量用） ──────────────────────────
-async def fetch_stock_history(
-    client: httpx.AsyncClient,
-    stock_code: str,
-    months: int = 2,
-) -> pd.DataFrame:
-    """
-    抓近 months 個月的個股日行情，用來計算 20 日均量
-    回傳欄位：code, trade_date, volume（張）
-    """
-    results = []
-    today = date.today()
-
-    for i in range(months):
-        dt = today.replace(day=1) - timedelta(days=30 * i)
-        date_str = dt.strftime("%Y%m01")
-        url = f"{BASE_URL}/exchangeReport/STOCK_DAY"
-        data = await fetch_json(client, url, params={"stockNo": stock_code, "date": date_str})
-        if isinstance(data, list) and data:
-            results.extend(data)
-        await asyncio.sleep(0.3)  # 避免過快
-
-    if not results:
-        return pd.DataFrame(columns=["code", "trade_date", "volume"])
-
-    df = pd.DataFrame(results)
-    df["code"] = stock_code
-
-    # 日期解析（TWSE 格式：民國年月日，如 113/04/15）
-    def parse_roc_date(s: str) -> Optional[date]:
-        try:
-            parts = str(s).split("/")
-            year = int(parts[0]) + 1911
-            return date(year, int(parts[1]), int(parts[2]))
-        except Exception:
-            return None
-
-    date_col = next((c for c in df.columns if "日期" in c or "Date" in c), None)
-    vol_col  = next((c for c in df.columns if "成交股數" in c or "TradeVolume" in c), None)
-
-    if date_col:
-        df["trade_date"] = df[date_col].apply(parse_roc_date)
-    if vol_col:
-        df["volume_shares"] = pd.to_numeric(
-            df[vol_col].astype(str).str.replace(",", ""), errors="coerce"
-        )
-        df["volume"] = (df["volume_shares"] / 1000).round(0).astype("Int64")
-
-    df = df.dropna(subset=["trade_date", "volume"])
-    df = df.sort_values("trade_date")
-    return df[["code", "trade_date", "volume"]]
-
-
-# ── 3. 批量計算 20 日均量 ─────────────────────────────────────
-async def calc_avg_volume_batch(
-    client: httpx.AsyncClient,
-    candidate_codes: list[str],
-    days: int = AVG_VOL_DAYS,
-) -> dict[str, float]:
-    """
-    對候選股票計算近 N 日均量。
-    回傳 {stock_code: avg_vol_張}
-
-    優化策略：
-      先用 STOCK_DAY_ALL 的當日量做初步過濾，
-      只對初步符合的股票才抓歷史資料。
-    """
-    result = {}
-    semaphore = asyncio.Semaphore(5)  # 最多 5 個並行請求
-
-    async def _calc_one(code: str):
-        async with semaphore:
-            try:
-                df = await fetch_stock_history(client, code, months=2)
-                if df.empty:
-                    return
-                recent = df.tail(days)
-                avg = recent["volume"].mean()
-                result[code] = round(float(avg), 1)
-            except Exception as e:
-                logger.warning(f"[TWSE] 均量計算失敗 {code}: {e}")
-
-    tasks = [_calc_one(code) for code in candidate_codes]
-    await asyncio.gather(*tasks)
-
-    logger.info(f"[TWSE] 完成均量計算：{len(result)}/{len(candidate_codes)} 檔")
-    return result
-
-
-# ── 4. 三大法人買賣超 ─────────────────────────────────────────
+# ── 2. 三大法人買賣超 ─────────────────────────────────────────
 # T86 欄位索引（array-of-arrays 格式，單位：股，需 ÷1000 轉張）
 # [0] 證券代號  [4] 外陸資買賣超  [10] 投信買賣超
 # [11] 自營商買賣超  [18] 三大法人合計
@@ -404,7 +292,7 @@ async def fetch_institutional_flow(client: httpx.AsyncClient) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-# ── 5. 上市公司基本資料（ISIN 網站，產業名稱直接為中文） ──────
+# ── 3. 上市公司基本資料（ISIN 網站，產業名稱直接為中文） ──────
 # TWSE OpenAPI (t187ap03_L) 的產業別欄位為內部數字代碼，
 # 與傳統 01-38 分類不一致，會造成系統性錯位。
 # 改從 ISIN 網站（strMode=2）抓取，直接取得正確中文產業名稱。
@@ -463,9 +351,8 @@ async def run_twse_pipeline() -> dict:
         candidates = quotes_df[quotes_df["volume"] >= 1500]["code"].tolist()
         logger.info(f"[TWSE] 初步候選股（當日量≥1500張）：{len(candidates)} 檔")
 
-        # Step 3: 個股歷史 API (STOCK_DAY) 目前失效（302 → 404），
-        #         均量改由 data_pipeline.compute_avg_vol_from_db() 從 DB 計算。
-        #         此處不再呼叫 calc_avg_volume_batch，避免浪費大量無效請求。
+        # Step 3: 均量由 data_pipeline.compute_avg_vol_from_db() 從 DB 計算
+        #         （個股歷史 API 已失效，見模組 docstring）
         quotes_df["avg_vol_20d"] = None  # 留空，pipeline 會從 DB 填入
 
         # Step 4: 三大法人
@@ -485,7 +372,7 @@ async def run_twse_pipeline() -> dict:
 
 # ── CLI 測試用 ────────────────────────────────────────────────
 
-# ── 6. 指定日期的三大法人（歷史回補 / 每日排程用） ────────────
+# ── 4. 指定日期的三大法人（歷史回補 / 每日排程用） ────────────
 def _parse_t86_payload(payload: dict, target: date) -> pd.DataFrame:
     """把 T86 的 JSON payload 解析成標準欄位；非交易日回傳空 DataFrame"""
     if payload.get("stat") != "OK" or not payload.get("data"):
