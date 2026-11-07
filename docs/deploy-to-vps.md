@@ -202,9 +202,11 @@ docker compose -f docker-compose.prod.yml exec scheduler \
 
 ```bash
 cd /opt/stockradar
-git pull
-docker compose -f docker-compose.prod.yml up -d --build
+bash scripts/deploy.sh
 ```
+
+Always use `deploy.sh`: it pulls, rebuilds, and **runs the database migrations** before restarting the services.
+A bare `git pull` + `docker compose up -d --build` skips the migrations, and new code will fail on tables that don't exist yet.
 
 **View logs:**
 

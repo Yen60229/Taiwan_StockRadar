@@ -45,6 +45,7 @@ I wanted one tool that pulls all the sources automatically, scores every listed 
 - **Alembic migrations**: schema changes are versioned; `deploy.sh` runs `alembic upgrade head` before the API starts
 - **Tests against a real database**: each test runs inside a transaction that gets rolled back, so tests can call `commit()` normally without leaking into one another. CI spins up a PostgreSQL service and verifies the migrated schema matches the models before running pytest
 - **Daily backups**: `pg_dump` on a cron schedule, with a restore drill script to prove the dumps actually restore
+- **Price-to-book rating**: every stock gets 便宜 / 普通 / 昂貴 by ranking its P/B against the rest of its industry (listed + OTC), recalculated each day. Clicking an industry opens a side-by-side P/B chart for that industry
 - **CSV export**: downloads the filtered result as UTF-8 BOM CSV, so Excel opens it without re-encoding
 
 ---
@@ -244,6 +245,7 @@ All public — no paid API needed.
 | [TWSE 每日收盤行情 (`MI_INDEX`)](https://www.twse.com.tw/) | Same-day quotes for listed stocks (上市) |
 | [TWSE 三大法人買賣超 (`T86`)](https://www.twse.com.tw/) | Daily institutional net buy/sell, listed |
 | [TPEX OpenAPI](https://www.tpex.org.tw/openapi/) | Quotes and institutional flow for OTC stocks (上櫃) |
+| [TWSE 本益比、殖利率及股價淨值比 (`BWIBBU_d`)](https://www.twse.com.tw/) / [TPEX 同類表 (`peQryDate`)](https://www.tpex.org.tw/) | Daily P/E, dividend yield and P/B for every stock — source of the 便宜 / 普通 / 昂貴 rating |
 | [TDCC](https://www.tdcc.com.tw/) | Shareholder distribution by holding tier — the concentration signal |
 | [HiStock](https://histock.tw/) | Foreign and director ownership ratios |
 
@@ -267,6 +269,7 @@ All public — no paid API needed.
 - [x] Daily backups with a verified restore drill
 - [x] Account approval workflow, admin panel, login required on every data endpoint
 - [x] Institutional flow bar chart on the stock page — view 外資 / 投信 / 自營 / total separately or side by side
+- [x] Price-to-book rating within each industry, with an industry comparison panel
 
 ### Next
 

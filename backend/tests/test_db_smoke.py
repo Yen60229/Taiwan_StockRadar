@@ -24,14 +24,14 @@ from models.database import (
 )
 
 
-async def test_migrated_schema_has_all_seven_tables(db_session):
+async def test_migrated_schema_has_all_tables(db_session):
     rows = (await db_session.execute(
         text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
     )).scalars().all()
 
     assert set(rows) == {
         "stocks", "daily_quotes", "institutional_flow", "chip_concentration",
-        "users", "watchlist", "ownership_ratios", "alembic_version",
+        "users", "watchlist", "ownership_ratios", "valuations", "alembic_version",
     }
 
 

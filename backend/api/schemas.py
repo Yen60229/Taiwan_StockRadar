@@ -71,7 +71,24 @@ class ScreenFilter(BaseModel):
     only_inst_buy: bool = False                # 只顯示三大法人買超
 
 
-class ScreenItem(BaseModel):
+class ValuationFields(BaseModel):
+    """
+    股價淨值比相關欄位（篩選結果、個股、同產業比較共用）。
+    pb_rating：cheap 便宜 / fair 普通 / expensive 昂貴 / None 不評級
+    """
+    valuation_date:     Optional[date] = None       # 估值資料日期
+    pe_ratio:           Optional[Decimal] = None    # 本益比；None 代表虧損或無資料
+    pb_ratio:           Optional[Decimal] = None    # 股價淨值比
+    dividend_yield:     Optional[Decimal] = None    # 殖利率 %
+    bvps:               Optional[Decimal] = None    # 每股淨值（收盤價 ÷ PB）
+    fin_period:         Optional[str] = None        # 財報季別，例如 115/Q3
+    pb_rating:          Optional[str] = None
+    industry_pb_pct:    Optional[float] = None      # 同產業 PB 排名百分位（0 最低、1 最高）
+    industry_pb_median: Optional[float] = None      # 同產業 PB 中位數
+    industry_n:         Optional[int] = None        # 同產業有 PB 的檔數
+
+
+class ScreenItem(ValuationFields):
     """單一篩選結果列"""
     model_config = ConfigDict(from_attributes=True)
     code:        str
@@ -110,7 +127,7 @@ class InstFlowPoint(BaseModel):
     total_net:   Optional[int] = None
 
 
-class StockDetail(BaseModel):
+class StockDetail(ValuationFields):
     model_config = ConfigDict(from_attributes=True)
     code:           str
     name:           str
@@ -120,6 +137,24 @@ class StockDetail(BaseModel):
     avg_vol_20d:    Optional[Decimal] = None
     conc_ratio:     Optional[Decimal] = None
     inst_flow_30d:  list[InstFlowPoint] = []
+
+
+# ── Valuation ─────────────────────────────────────────────────
+class IndustryValuationItem(ValuationFields):
+    code:       str
+    name:       str
+    short_name: Optional[str] = None
+    market:     str
+    close:      Optional[Decimal] = None   # 估值資料當天的收盤價
+
+
+class IndustryValuation(BaseModel):
+    industry:  str
+    n:         int = 0                      # 有 PB 的檔數
+    median:    Optional[float] = None
+    min:       Optional[float] = None
+    max:       Optional[float] = None
+    items:     list[IndustryValuationItem]  # 依 PB 由低到高，沒有 PB 的排最後
 
 
 # ── Watchlist ─────────────────────────────────────────────────

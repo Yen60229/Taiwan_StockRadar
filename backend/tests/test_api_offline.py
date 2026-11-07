@@ -123,6 +123,7 @@ async def test_expected_routes_are_registered(client):
         "/api/auth/login",
         "/api/auth/me",
         "/api/screen",
+        "/api/valuation/industry",
         "/api/watchlist",
     ]:
         assert expected in paths, f"{expected} 未註冊"

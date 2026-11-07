@@ -33,6 +33,11 @@ from scraper.tpex_scraper import (
     HEADERS as TPEX_HEADERS,
 )
 from scraper.tdcc_scraper import fetch_chip_batch
+from scraper.valuation import (
+    attach_bvps,
+    fetch_tpex_on as tpex_valuation_on,
+    fetch_twse_on as twse_valuation_on,
+)
 from scraper.ownership_scraper import run_ownership_pipeline
 
 logger = logging.getLogger(__name__)
@@ -288,6 +293,48 @@ async def upsert_institutional_flow(
     await session.commit()
     logger.info(f"[DB] institutional_flow upsert：{count} 筆")
     return count
+
+
+# ── 5b. Upsert 估值（本益比 / 殖利率 / 股價淨值比） ───────────
+async def upsert_valuations(session: AsyncSession, rows: list[dict]) -> int:
+    """
+    一次送出整批（executemany），不逐筆往返資料庫：每天約 2,000 筆，
+    逐筆 execute 會多出 2,000 次來回。
+    """
+    if not rows:
+        return 0
+
+    params = [
+        {
+            "code":   r["code"],
+            "date":   r["trade_date"],
+            "pe":     _safe_float(r.get("pe_ratio")),
+            "pb":     _safe_float(r.get("pb_ratio")),
+            "yld":    _safe_float(r.get("dividend_yield")),
+            "bvps":   _safe_float(r.get("bvps")),
+            "period": r.get("fin_period"),
+        }
+        for r in rows
+    ]
+    await session.execute(
+        text("""
+            INSERT INTO valuations
+                (stock_code, trade_date, pe_ratio, pb_ratio, dividend_yield, bvps, fin_period)
+            VALUES
+                (:code, :date, :pe, :pb, :yld, :bvps, :period)
+            ON CONFLICT (stock_code, trade_date)
+            DO UPDATE SET
+                pe_ratio       = EXCLUDED.pe_ratio,
+                pb_ratio       = EXCLUDED.pb_ratio,
+                dividend_yield = EXCLUDED.dividend_yield,
+                bvps           = EXCLUDED.bvps,
+                fin_period     = EXCLUDED.fin_period
+        """),
+        params,
+    )
+    await session.commit()
+    logger.info(f"[DB] valuations upsert：{len(params)} 筆")
+    return len(params)
 
 
 # ── 6. Upsert 籌碼集中度 ─────────────────────────────────────
@@ -583,16 +630,29 @@ async def run_quotes_pipeline() -> dict:
             )
         logger.info(f"[Daily] 行情 {len(all_quotes)} 檔，交易日 TWSE={twse_date} TPEX={tpex_date}")
 
-        # ② 三大法人：用行情回報的交易日去要，確保兩張表日期一致
+        # ② 三大法人 + 估值表：用行情回報的交易日去要，確保各表日期一致。
+        #    同一個交易所的請求依序送出（實測證交所同時收到兩個請求會隨機斷掉其中一個），
+        #    兩個交易所之間才並行。
+        async def _inst_then_valuation(fetch_inst, fetch_val, client, d):
+            inst = await fetch_inst(client, d)
+            return inst, await fetch_val(client, d)
+
         tasks, labels = [], []
         if twse_date:
-            tasks.append(twse_inst_on(tc, twse_date)); labels.append("TWSE")
+            tasks.append(_inst_then_valuation(twse_inst_on, twse_valuation_on, tc, twse_date))
+            labels.append("TWSE")
         if tpex_date:
-            tasks.append(tpex_inst_on(pc, tpex_date)); labels.append("TPEX")
-        inst_frames = list(await asyncio.gather(*tasks)) if tasks else []
+            tasks.append(_inst_then_valuation(tpex_inst_on, tpex_valuation_on, pc, tpex_date))
+            labels.append("TPEX")
+        fetched = await asyncio.gather(*tasks)
+        inst_frames = [inst for inst, _ in fetched]
+        val_frames  = [val for _, val in fetched]
 
     for label, df in zip(labels, inst_frames):
         logger.info(f"[Daily] {label} 三大法人：{len(df)} 筆")
+
+    # 每股淨值 = 同一天收盤價 ÷ PB（上櫃估值表沒有收盤價，兩市統一用行情的收盤價）
+    val_rows = [r for df in val_frames for r in attach_bvps(df, all_quotes).to_dict("records")]
 
     # ③ 寫入
     async with AsyncSessionLocal() as session:
@@ -602,12 +662,19 @@ async def run_quotes_pipeline() -> dict:
         for df in inst_frames:
             if not df.empty:
                 await upsert_institutional_flow(session, df)
+        await upsert_valuations(session, val_rows)
 
     inst_total = sum(len(df) for df in inst_frames)
     logger.info("=" * 60)
-    logger.info(f"✅ 行情 Pipeline 完成：{len(all_quotes)} 檔行情、{inst_total} 筆法人（{'、'.join(str(d) for d in trade_dates)}）")
+    logger.info(
+        f"✅ 行情 Pipeline 完成：{len(all_quotes)} 檔行情、{inst_total} 筆法人、"
+        f"{len(val_rows)} 筆估值（{'、'.join(str(d) for d in trade_dates)}）"
+    )
 
-    return {"total": len(all_quotes), "inst": inst_total, "trade_dates": trade_dates}
+    return {
+        "total": len(all_quotes), "inst": inst_total,
+        "valuations": len(val_rows), "trade_dates": trade_dates,
+    }
 
 
 # ── 非交易日 Pipeline ─────────────────────────────────────────

@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from api.routes import admin, auth, screen, stocks, watchlist
+from api.routes import admin, auth, screen, stocks, valuation, watchlist
 from models.database import AsyncSessionLocal
 
 logging.basicConfig(
@@ -56,6 +56,7 @@ app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(screen.router)
 app.include_router(stocks.router)
+app.include_router(valuation.router)
 app.include_router(watchlist.router)
 
 
@@ -69,6 +70,7 @@ async def root():
             "auth":      "/api/auth/{register,login,me}",
             "screen":    "/api/screen",
             "stocks":    "/api/stocks/{code}",
+            "valuation": "/api/valuation/industry?industry=",
             "watchlist": "/api/watchlist",
             "admin":     "/api/admin/users",
         },

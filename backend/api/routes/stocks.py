@@ -1,6 +1,6 @@
 """
 StockRadar - Stock Detail Routes
-GET /api/stocks/{code}            個股詳細
+GET /api/stocks/{code}            個股詳細（含股價淨值比評級）
 GET /api/stocks/{code}/inst-flow  近30日法人買賣超
 """
 from datetime import date, timedelta
@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.deps import get_current_user, get_db_session
 from api.schemas import InstFlowPoint, StockDetail
+from api.valuation import valuation_map
 from models.database import ChipConcentration, DailyQuote, InstitutionalFlow, Stock, User
 
 router = APIRouter(prefix="/api/stocks", tags=["stocks"])
@@ -42,7 +43,10 @@ async def get_stock_detail(
         .order_by(InstitutionalFlow.trade_date)
     )).scalars().all()
 
+    valuation = (await valuation_map(db, [code])).get(code, {})
+
     return StockDetail(
+        **valuation,
         code=stock.code, name=stock.name, market=stock.market, industry=stock.industry,
         latest_close=latest_quote.close if latest_quote else None,
         avg_vol_20d=latest_quote.avg_vol_20d if latest_quote else None,
