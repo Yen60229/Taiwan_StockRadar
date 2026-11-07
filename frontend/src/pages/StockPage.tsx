@@ -2,6 +2,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { stockApi } from "../api/client";
 import InstFlowChart from "../components/InstFlowChart";
+import { RatingBadge, ValuationTags, bvpsTitle } from "../components/PbRating";
 
 export default function StockPage() {
   const { code } = useParams();
@@ -32,6 +33,18 @@ export default function StockPage() {
           <Stat label="收盤價"     value={data.latest_close ? Number(data.latest_close).toFixed(2) : "—"} />
           <Stat label="20日均量"   value={data.avg_vol_20d ? `${Number(data.avg_vol_20d).toLocaleString()} 張` : "—"} />
           <Stat label="籌碼集中度" value={data.conc_ratio != null ? `${Number(data.conc_ratio).toFixed(2)}%` : "—"} accent />
+          <Stat label="股價淨值比" value={data.pb_ratio != null ? `${Number(data.pb_ratio).toFixed(2)} 倍` : "—"} />
+          <Stat label="每股淨值" value={data.bvps != null ? `${Number(data.bvps).toFixed(2)} 元` : "—"}
+                title={data.bvps != null ? bvpsTitle(data) : undefined} />
+          <div style={{ background: "var(--bg-elev)", padding: 20, borderRadius: 12 }}>
+            <div style={{ fontSize: 11, letterSpacing: ".1em", color: "var(--text-dim)" }}>
+              評級（同產業{data.industry_n ? ` ${data.industry_n} 檔` : ""}）
+            </div>
+            <div style={{ marginTop: 10, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+              <RatingBadge v={data} size="lg" />
+              <ValuationTags v={data} />
+            </div>
+          </div>
         </div>
 
         <InstFlowChart rows={data.inst_flow_30d} />
@@ -40,9 +53,9 @@ export default function StockPage() {
   );
 }
 
-function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function Stat({ label, value, accent, title }: { label: string; value: string; accent?: boolean; title?: string }) {
   return (
-    <div style={{ background: "var(--bg-elev)", padding: 20, borderRadius: 12 }}>
+    <div title={title} style={{ background: "var(--bg-elev)", padding: 20, borderRadius: 12 }}>
       <div style={{ fontSize: 11, letterSpacing: ".1em", color: "var(--text-dim)", textTransform: "uppercase" }}>{label}</div>
       <div className="mono" style={{ marginTop: 6, fontSize: 26, fontWeight: 700, color: accent ? "var(--neutral)" : "var(--text)" }}>{value}</div>
     </div>

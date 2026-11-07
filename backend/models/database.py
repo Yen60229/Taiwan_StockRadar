@@ -191,6 +191,26 @@ class OwnershipRatio(Base):
         UniqueConstraint("stock_code", "report_date", name="uq_ownership_ratio"),
     )
 
+# ── 本益比 / 殖利率 / 股價淨值比（交易所每日公布） ──────────
+class Valuation(Base):
+    __tablename__ = "valuations"
+
+    id             = Column(BigInteger,     primary_key=True, autoincrement=True)
+    stock_code     = Column(String(10),     nullable=False)
+    trade_date     = Column(Date,           nullable=False, index=True)  # 取最新日期用
+    pe_ratio       = Column(Numeric(10, 2), nullable=True)   # 本益比；虧損時交易所留空
+    pb_ratio       = Column(Numeric(8, 2),  nullable=True)   # 股價淨值比；淨值為負時留空
+    dividend_yield = Column(Numeric(6, 2),  nullable=True)   # 殖利率 %
+    bvps           = Column(Numeric(10, 2), nullable=True)   # 每股淨值 = 收盤價 ÷ PB
+    fin_period     = Column(String(8),      nullable=True)   # 財報季別，例如 115/Q3
+
+    __table_args__ = (
+        # 這個唯一索引同時負責「每檔取最新一筆」（stock_code 開頭），
+        # 所以 stock_code 不另外建索引。
+        UniqueConstraint("stock_code", "trade_date", name="uq_valuations"),
+    )
+
+
 # 注意：這裡刻意沒有 init_db() / create_all()。
 # 唯一的建表路徑是 Alembic（見 migrations/、scripts/alembic_utils.py）：
 #   dev  → docker-compose.yml 的 api command 先跑 `alembic upgrade head`

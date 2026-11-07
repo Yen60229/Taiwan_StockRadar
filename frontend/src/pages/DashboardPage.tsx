@@ -1,8 +1,10 @@
 import { useRef, useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { screenApi, watchlistApi, type ScreenItem } from "../api/client";
+import { screenApi, watchlistApi, type PbRating, type ScreenItem } from "../api/client";
 import { useAuth } from "../store/auth";
+import IndustryValuationPanel from "../components/IndustryValuationPanel";
+import { RATING_META, RATING_ORDER, RatingBadge, ValuationTags, bvpsTitle, num } from "../components/PbRating";
 
 // ── TWSE 產業代碼 → 中文 ─────────────────────────────────────
 const INDUSTRY_MAP: Record<string, string> = {
@@ -28,6 +30,19 @@ export default function DashboardPage() {
   const [search,    setSearch]    = useState("");
   const [market,    setMarket]    = useState<"ALL" | "TWSE" | "TPEX">("ALL");
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "conc_ratio", dir: "desc" });
+  // 評級篩選：沒勾任何一個 = 全部顯示
+  const [ratings, setRatings] = useState<Set<PbRating>>(new Set());
+  // 同產業比較面板
+  const [panel, setPanel] = useState<{ industry: string; code: string } | null>(null);
+  const closePanel = useCallback(() => setPanel(null), []);
+
+  const toggleRating = useCallback((r: PbRating) => {
+    setRatings(prev => {
+      const next = new Set(prev);
+      if (next.has(r)) next.delete(r); else next.add(r);
+      return next;
+    });
+  }, []);
 
   const handleSort = useCallback((key: string) => {
     setSort(prev => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" });
@@ -58,6 +73,8 @@ export default function DashboardPage() {
         const f = s.foreign_hold_ratio != null ? Number(s.foreign_hold_ratio) : null;
         return c != null && f != null ? c - f : null;
       }
+      // 評級依同產業排名百分位排序（便宜在前 = 升冪）
+      if (sort.key === "pb_rating") return num(s.industry_pb_pct);
       const v = s[sort.key as keyof ScreenItem];
       return v != null ? Number(v) : null;
     };
@@ -65,6 +82,7 @@ export default function DashboardPage() {
     const filtered = (screen?.items || []).filter(s => {
       if (search && !s.code.includes(search) && !(s.short_name || s.name).includes(search)) return false;
       if (market !== "ALL" && s.market !== market) return false;
+      if (ratings.size && (!s.pb_rating || !ratings.has(s.pb_rating))) return false;
       return true;
     });
 
@@ -80,10 +98,14 @@ export default function DashboardPage() {
       if (bv == null) return -1;
       return sort.dir === "asc" ? av - bv : bv - av;
     });
-  }, [screen?.items, search, market, sort]);
+  }, [screen?.items, search, market, ratings, sort]);
+
+  // 面板「只看篩選結果」用：畫面上目前看得到的股票
+  const visibleCodes = useMemo(() => new Set(items.map(s => s.code)), [items]);
 
   const exportCSV = () => {
-    const header = ["代號","名稱","市場","產業","收盤","均量(張)","籌碼集中度%","外資持股%","大戶籌碼%","董監持股%","外資買賣超(張)","投信買賣超(張)"];
+    const header = ["代號","名稱","市場","產業","收盤","均量(張)","籌碼集中度%","外資持股%","大戶籌碼%","董監持股%","外資買賣超(張)","投信買賣超(張)",
+                    "股價淨值比","每股淨值","本益比","財報季別","評級"];
     const rows = items.map(s => {
       const forHold = s.foreign_hold_ratio != null ? Number(s.foreign_hold_ratio) : null;
       const conc    = s.conc_ratio != null ? Number(s.conc_ratio) : null;
@@ -97,6 +119,11 @@ export default function DashboardPage() {
         s.director_hold_ratio != null ? Number(s.director_hold_ratio).toFixed(2) : "",
         s.foreign_net != null ? Math.round(Number(s.foreign_net)) : "",
         s.trust_net   != null ? Math.round(Number(s.trust_net))   : "",
+        s.pb_ratio != null ? Number(s.pb_ratio).toFixed(2) : "",
+        s.bvps     != null ? Number(s.bvps).toFixed(2)     : "",
+        s.pe_ratio != null ? Number(s.pe_ratio).toFixed(2) : "",
+        s.fin_period ?? "",
+        s.pb_rating ? RATING_META[s.pb_rating].label : "",
       ];
     });
     const csv = "﻿" + [header, ...rows].map(r => r.join(",")).join("\n");
@@ -181,6 +208,8 @@ export default function DashboardPage() {
                  style={{ accentColor:"var(--accent)", width:15, height:15 }} />
           僅顯示三大法人買超
         </label>
+
+        <RatingFilter value={ratings} onToggle={toggleRating} />
         <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
           <span style={{ fontSize:13, color:"#5a7ca8" }}>符合條件</span>
           <span style={{ fontSize:20, fontWeight:800, color:"var(--accent)", fontFamily:"var(--font-mono)", lineHeight:1 }}>
@@ -210,18 +239,29 @@ export default function DashboardPage() {
               items={items}
               onRowClick={(code) => nav(`/stock/${code}`)}
               onToggleWl={(code, inWl) => inWl ? rmWl.mutate(code) : addWl.mutate(code)}
+              onIndustryClick={(industry, code) => setPanel({ industry, code })}
               sort={sort}
               onSort={handleSort}
             />
           )}
         </div>
       </main>
+
+      {panel && (
+        <IndustryValuationPanel
+          industry={panel.industry}
+          highlight={panel.code}
+          screenedCodes={visibleCodes}
+          onClose={closePanel}
+          onOpenStock={(code) => nav(`/stock/${code}`)}
+        />
+      )}
     </div>
   );
 }
 
 // ── 欄位定義 ─────────────────────────────────────────────
-// group: 0 基本 / 1 行情 / 2 籌碼 / 3 法人買賣超 / 4 關注
+// group: 0 基本 / 1 行情 / 2 籌碼 / 3 法人買賣超 / 5 評價 / 4 關注
 const COLS = [
   { key:"code",                label:"代號",      sub:"",   align:"left"   as const, width:72,  group:0, sortable:true  },
   { key:"name",                label:"名稱",      sub:"",   align:"left"   as const, width:148, group:0, sortable:false },
@@ -234,17 +274,21 @@ const COLS = [
   { key:"director_hold_ratio", label:"董監持股",  sub:"%",  align:"right"  as const, width:92,  group:2, sortable:true  },
   { key:"foreign_net",         label:"外資買賣超", sub:"張", align:"right"  as const, width:104, group:3, sortable:true  },
   { key:"trust_net",           label:"投信買賣超", sub:"張", align:"right"  as const, width:104, group:3, sortable:true  },
+  { key:"pb_ratio",            label:"PB",        sub:"倍", align:"right"  as const, width:76,  group:5, sortable:true  },
+  { key:"bvps",                label:"每股淨值",  sub:"元", align:"right"  as const, width:92,  group:5, sortable:true  },
+  { key:"pb_rating",           label:"評級",      sub:"同產業", align:"left" as const, width:200, group:5, sortable:true },
   { key:"watchlist",           label:"",          sub:"",   align:"center" as const, width:52,  group:4, sortable:false },
 ];
 
 // 每個 group 的左邊起始欄加粗分隔線
-const GROUP_START = new Set([3, 5, 9, 11]); // close, conc_ratio, foreign_net, watchlist
+const GROUP_START = new Set([3, 5, 9, 11, 14]); // close, conc_ratio, foreign_net, pb_ratio, watchlist
 
 // ── Table ────────────────────────────────────────────────
-function ResizableTable({ items, onRowClick, onToggleWl, sort, onSort }: {
+function ResizableTable({ items, onRowClick, onToggleWl, onIndustryClick, sort, onSort }: {
   items: ScreenItem[];
   onRowClick: (code: string) => void;
   onToggleWl: (code: string, inWl: boolean) => void;
+  onIndustryClick: (industry: string, code: string) => void;
   sort: { key: string; dir: "asc" | "desc" };
   onSort: (key: string) => void;
 }) {
@@ -365,9 +409,12 @@ function ResizableTable({ items, onRowClick, onToggleWl, sort, onSort }: {
                 </div>
               </td>
 
-              {/* 產業 */}
-              <td onClick={() => onRowClick(s.code)} style={tdc("left", true)}>
-                <span style={{ fontSize:12, color:"#4a6a88", whiteSpace:"nowrap" }}>
+              {/* 產業：點擊開啟同產業股價淨值比比較 */}
+              <td onClick={() => s.industry ? onIndustryClick(s.industry, s.code) : onRowClick(s.code)}
+                  title={s.industry ? `查看${industryLabel(s.industry)}的股價淨值比排名` : undefined}
+                  style={tdc("left", true)}>
+                <span style={{ fontSize:12, color: isHov ? "#5ab4ff" : "#4a6a88", whiteSpace:"nowrap",
+                               borderBottom: s.industry ? "1px dashed rgba(90,180,255,.35)" : undefined }}>
                   {industryLabel(s.industry)}
                 </span>
               </td>
@@ -417,6 +464,33 @@ function ResizableTable({ items, onRowClick, onToggleWl, sort, onSort }: {
               {/* 投信買賣超 */}
               <td onClick={() => onRowClick(s.code)} style={tdc("right", true)}>
                 <NetTag value={tNet} />
+              </td>
+
+              {/* PB — group start */}
+              <td onClick={() => onRowClick(s.code)}
+                  style={{ ...tdc("right", true), borderLeft:"2px solid rgba(0,150,255,.18)" }}>
+                {s.pb_ratio != null ? (
+                  <span style={{ fontFamily:"var(--font-mono)", fontSize:14, fontWeight:700, color:"#b8ccec" }}>
+                    {Number(s.pb_ratio).toFixed(2)}
+                  </span>
+                ) : <Dash />}
+              </td>
+
+              {/* 每股淨值 */}
+              <td onClick={() => onRowClick(s.code)} title={s.bvps != null ? bvpsTitle(s) : undefined}
+                  style={tdc("right", true)}>
+                {s.bvps != null ? (
+                  <span style={{ fontFamily:"var(--font-mono)", fontSize:13.5, color:"#6a8aaa" }}>
+                    {Number(s.bvps).toFixed(2)}
+                  </span>
+                ) : <Dash />}
+              </td>
+
+              {/* 評級 + 提醒標籤 */}
+              <td onClick={() => s.industry ? onIndustryClick(s.industry, s.code) : onRowClick(s.code)}
+                  style={tdc("left", true)}>
+                <RatingBadge v={s} />
+                <ValuationTags v={s} />
               </td>
 
               {/* 關注 — group start */}
@@ -545,6 +619,33 @@ function Slider({ label, suffix, value, min, max, step, onChange }: {
         }}>
           {value.toLocaleString()}{suffix}
         </span>
+      </div>
+    </div>
+  );
+}
+
+// ── 股價淨值比評級篩選（可複選，全不選 = 全部）──────────────
+function RatingFilter({ value, onToggle }: { value: Set<PbRating>; onToggle: (r: PbRating) => void }) {
+  return (
+    <div>
+      <div style={{ fontSize:10.5, letterSpacing:".1em", color:"#3d5a7a", marginBottom:5, fontWeight:600 }}>
+        股價淨值比
+      </div>
+      <div style={{ display:"flex", gap:6 }}>
+        {RATING_ORDER.map(r => {
+          const m = RATING_META[r];
+          const on = value.has(r);
+          return (
+            <button key={r} onClick={() => onToggle(r)} aria-pressed={on} style={{
+              padding:"4px 12px", borderRadius:7, fontSize:12.5, fontWeight:700,
+              border:`1px solid ${on ? m.border : "rgba(0,150,255,.18)"}`,
+              background: on ? m.bg : "rgba(0,0,0,.25)",
+              color: on ? m.color : "#3d5a7a",
+            }}>
+              {m.label}
+            </button>
+          );
+        })}
       </div>
     </div>
   );

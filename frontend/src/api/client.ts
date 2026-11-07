@@ -80,7 +80,41 @@ export interface AdminUser {
   last_login_at?: string;
 }
 
-export interface ScreenItem {
+// ── 股價淨值比 ───────────────────────────────────────────
+// cheap 便宜 / fair 普通 / expensive 昂貴；null 代表不評級
+export type PbRating = "cheap" | "fair" | "expensive";
+
+export interface ValuationFields {
+  valuation_date?: string;
+  pe_ratio?: number | null;        // null 代表虧損或無資料
+  pb_ratio?: number | null;
+  dividend_yield?: number | null;
+  bvps?: number | null;            // 每股淨值 = 收盤價 ÷ PB
+  fin_period?: string | null;      // 115/Q3
+  pb_rating?: PbRating | null;
+  industry_pb_pct?: number | null; // 同產業排名百分位，0 最低、1 最高
+  industry_pb_median?: number | null;
+  industry_n?: number | null;
+}
+
+export interface IndustryValuationItem extends ValuationFields {
+  code: string;
+  name: string;
+  short_name?: string;
+  market: string;
+  close?: number | null;
+}
+
+export interface IndustryValuation {
+  industry: string;
+  n: number;
+  median?: number | null;
+  min?: number | null;
+  max?: number | null;
+  items: IndustryValuationItem[];  // PB 由低到高
+}
+
+export interface ScreenItem extends ValuationFields {
   code: string;
   name: string;
   short_name?: string;
@@ -115,7 +149,7 @@ export interface InstFlowPoint {
   total_net?: number;
 }
 
-export interface StockDetail {
+export interface StockDetail extends ValuationFields {
   code: string;
   name: string;
   market: string;
@@ -166,6 +200,11 @@ export const screenApi = {
 export const stockApi = {
   detail: (code: string) =>
     api.get<StockDetail>(`/stocks/${code}`).then((r) => r.data),
+};
+
+export const valuationApi = {
+  industry: (industry: string) =>
+    api.get<IndustryValuation>("/valuation/industry", { params: { industry } }).then((r) => r.data),
 };
 
 export const watchlistApi = {

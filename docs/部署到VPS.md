@@ -256,9 +256,11 @@ docker compose -f docker-compose.prod.yml exec scheduler sh /app/scripts/run_now
 
 ```bash
 cd /opt/stockradar
-git pull
-docker compose -f docker-compose.prod.yml up -d --build
+bash scripts/deploy.sh
 ```
+
+一律用 `deploy.sh`：它會拉程式、重建映像檔、**先跑資料庫 migration** 再重啟服務。
+只做 `git pull` + `docker compose up -d --build` 會跳過 migration，新版程式碰到還沒建立的資料表就會出錯。
 
 ### 查看 log
 

@@ -12,6 +12,7 @@ from sqlalchemy.sql import Select
 
 from api.deps import get_current_user, get_db_session
 from api.schemas import ScreenFilter, ScreenItem, ScreenResponse
+from api.valuation import valuation_map
 from models.database import (
     ChipConcentration,
     DailyQuote,
@@ -131,6 +132,9 @@ async def screen_stocks(
     wl = await db.execute(select(Watchlist.stock_code).where(Watchlist.user_id == user.id))
     watchlist_codes = {r[0] for r in wl}
 
+    # 股價淨值比：另外查再用代號合併；沒有估值資料的股票照常出現，評價欄位空白
+    valuations = await valuation_map(db, [r.code for r in rows])
+
     items = [
         ScreenItem(
             code=r.code, name=r.name, short_name=r.short_name, market=r.market, industry=r.industry,
@@ -142,6 +146,7 @@ async def screen_stocks(
             trust_hold_ratio=r.trust_hold_ratio,
             director_hold_ratio=r.director_hold_ratio,
             in_watchlist=(r.code in watchlist_codes),
+            **valuations.get(r.code, {}),
         )
         for r in rows
     ]

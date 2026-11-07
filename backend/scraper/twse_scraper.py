@@ -404,23 +404,28 @@ async def fetch_institutional_flow_on(
     """
     抓「指定交易日」的 TWSE 三大法人買賣超。
     非交易日（假日 / 尚未公布）回傳空 DataFrame，不往前找、不 raise。
+
+    證交所請求太密時會斷線或回 307 轉址（限流），所以這兩種情況都重試，
+    最多 RETRY_COUNT 次。非交易日回的是 200 + 「沒有符合條件的資料」，不受影響。
     """
     date_str = target.strftime("%Y%m%d")
-    try:
-        r = await client.get(
-            _T86_URL,
-            params={"date": date_str, "selectType": "ALL", "response": "json"},
-            headers=_T86_HEADERS,
-            timeout=REQUEST_TIMEOUT,
-        )
-        if r.status_code != 200:
-            return pd.DataFrame()
-        payload = r.json()
-    except Exception as e:
-        logger.warning(f"[TWSE] T86 {date_str} 請求失敗：{e}")
-        return pd.DataFrame()
-
-    return _parse_t86_payload(payload, target)
+    for attempt in range(1, RETRY_COUNT + 1):
+        try:
+            r = await client.get(
+                _T86_URL,
+                params={"date": date_str, "selectType": "ALL", "response": "json"},
+                headers=_T86_HEADERS,
+                timeout=REQUEST_TIMEOUT,
+            )
+            r.raise_for_status()
+            return _parse_t86_payload(r.json(), target)
+        except (httpx.HTTPError, ValueError) as e:
+            logger.warning(
+                f"[TWSE] T86 {date_str} 第 {attempt}/{RETRY_COUNT} 次失敗：{type(e).__name__} {e}"
+            )
+            if attempt < RETRY_COUNT:
+                await asyncio.sleep(RETRY_DELAY * attempt)
+    return pd.DataFrame()
 
 if __name__ == "__main__":
     logging.basicConfig(
