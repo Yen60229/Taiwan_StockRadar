@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { stockApi } from "../api/client";
 import InstFlowChart from "../components/InstFlowChart";
 import { RatingBadge, ValuationTags, bvpsTitle } from "../components/PbRating";
+import PbHistoryChart from "../components/PbHistoryChart";
 
 export default function StockPage() {
   const { code } = useParams();
@@ -38,7 +39,7 @@ export default function StockPage() {
                 title={data.bvps != null ? bvpsTitle(data) : undefined} />
           <div style={{ background: "var(--bg-elev)", padding: 20, borderRadius: 12 }}>
             <div style={{ fontSize: 11, letterSpacing: ".1em", color: "var(--text-dim)" }}>
-              評級（同產業{data.industry_n ? ` ${data.industry_n} 檔` : ""}）
+              評級・同產業{data.industry_n ? `（${data.industry_n} 檔）` : ""}
             </div>
             <div style={{ marginTop: 10, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
               <RatingBadge v={data} size="lg" />
@@ -46,6 +47,8 @@ export default function StockPage() {
             </div>
           </div>
         </div>
+
+        <PbHistoryChart detail={data} />
 
         <InstFlowChart rows={data.inst_flow_30d} />
       </div>

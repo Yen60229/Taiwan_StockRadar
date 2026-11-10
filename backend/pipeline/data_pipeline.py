@@ -303,6 +303,8 @@ async def upsert_valuations(
     一次送出整批（executemany），不逐筆往返資料庫：每天約 2,000 筆，
     逐筆 execute 會多出 2,000 次來回。
 
+    同時更新 valuation_monthly（每檔每月一筆，跟自己歷史比用）。
+
     keep_existing=True：該 (代號, 日期) 已經有資料就不動它（ON CONFLICT DO NOTHING）。
     回補歷史用這個。每日排程寫入的列有 bvps（靠當天收盤價推算），歷史列沒有收盤價
     所以 bvps 是空的——若重跑回補時用預設的「衝突就覆蓋」，會把已經算好的每股淨值蓋成空值。
@@ -341,8 +343,28 @@ async def upsert_valuations(
         """),
         params,
     )
+
+    # 每月快照：每檔每月只留該月最新一天的 PB。
+    # WHERE 讓較舊的日期（例如回補的月底資料晚於每日資料寫入）不會蓋掉較新的。
+    monthly = [
+        {"code": r["code"], "month": r["date"].replace(day=1), "date": r["date"], "pb": r["pb"]}
+        for r in params if r["pb"] is not None
+    ]
+    if monthly:
+        await session.execute(
+            text("""
+                INSERT INTO valuation_monthly (stock_code, month, trade_date, pb_ratio)
+                VALUES (:code, :month, :date, :pb)
+                ON CONFLICT (stock_code, month) DO UPDATE SET
+                    trade_date = EXCLUDED.trade_date,
+                    pb_ratio   = EXCLUDED.pb_ratio
+                WHERE EXCLUDED.trade_date >= valuation_monthly.trade_date
+            """),
+            monthly,
+        )
+
     await session.commit()
-    logger.info(f"[DB] valuations upsert：{len(params)} 筆")
+    logger.info(f"[DB] valuations upsert：{len(params)} 筆（每月快照 {len(monthly)} 筆）")
     return len(params)
 
 

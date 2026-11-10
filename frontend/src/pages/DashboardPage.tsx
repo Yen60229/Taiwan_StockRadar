@@ -30,19 +30,21 @@ export default function DashboardPage() {
   const [search,    setSearch]    = useState("");
   const [market,    setMarket]    = useState<"ALL" | "TWSE" | "TPEX">("ALL");
   const [sort, setSort] = useState<{ key: string; dir: "asc" | "desc" }>({ key: "conc_ratio", dir: "desc" });
-  // 評級篩選：沒勾任何一個 = 全部顯示
+  // 評級篩選：沒勾任何一個 = 全部顯示。同產業與自身歷史分開篩，兩組都勾時要同時符合。
   const [ratings, setRatings] = useState<Set<PbRating>>(new Set());
+  const [histRatings, setHistRatings] = useState<Set<PbRating>>(new Set());
   // 同產業比較面板
   const [panel, setPanel] = useState<{ industry: string; code: string } | null>(null);
   const closePanel = useCallback(() => setPanel(null), []);
 
-  const toggleRating = useCallback((r: PbRating) => {
-    setRatings(prev => {
+  const toggleIn = (set: React.Dispatch<React.SetStateAction<Set<PbRating>>>) => (r: PbRating) =>
+    set(prev => {
       const next = new Set(prev);
       if (next.has(r)) next.delete(r); else next.add(r);
       return next;
     });
-  }, []);
+  const toggleRating = useCallback(toggleIn(setRatings), []);
+  const toggleHistRating = useCallback(toggleIn(setHistRatings), []);
 
   const handleSort = useCallback((key: string) => {
     setSort(prev => prev.key === key ? { key, dir: prev.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" });
@@ -75,6 +77,7 @@ export default function DashboardPage() {
       }
       // 評級依同產業排名百分位排序（便宜在前 = 升冪）
       if (sort.key === "pb_rating") return num(s.industry_pb_pct);
+      if (sort.key === "history_rating") return num(s.history_pb_pct);
       const v = s[sort.key as keyof ScreenItem];
       return v != null ? Number(v) : null;
     };
@@ -83,6 +86,7 @@ export default function DashboardPage() {
       if (search && !s.code.includes(search) && !(s.short_name || s.name).includes(search)) return false;
       if (market !== "ALL" && s.market !== market) return false;
       if (ratings.size && (!s.pb_rating || !ratings.has(s.pb_rating))) return false;
+      if (histRatings.size && (!s.history_rating || !histRatings.has(s.history_rating))) return false;
       return true;
     });
 
@@ -98,14 +102,15 @@ export default function DashboardPage() {
       if (bv == null) return -1;
       return sort.dir === "asc" ? av - bv : bv - av;
     });
-  }, [screen?.items, search, market, ratings, sort]);
+  }, [screen?.items, search, market, ratings, histRatings, sort]);
 
   // 面板「只看篩選結果」用：畫面上目前看得到的股票
   const visibleCodes = useMemo(() => new Set(items.map(s => s.code)), [items]);
 
   const exportCSV = () => {
     const header = ["代號","名稱","市場","產業","收盤","均量(張)","籌碼集中度%","外資持股%","大戶籌碼%","董監持股%","外資買賣超(張)","投信買賣超(張)",
-                    "股價淨值比","每股淨值","本益比","財報季別","評級"];
+                    "股價淨值比","每股淨值","本益比","財報季別","同產業評級",
+                    "自身歷史評級","便宜價","合理價","昂貴價"];
     const rows = items.map(s => {
       const forHold = s.foreign_hold_ratio != null ? Number(s.foreign_hold_ratio) : null;
       const conc    = s.conc_ratio != null ? Number(s.conc_ratio) : null;
@@ -124,6 +129,10 @@ export default function DashboardPage() {
         s.pe_ratio != null ? Number(s.pe_ratio).toFixed(2) : "",
         s.fin_period ?? "",
         s.pb_rating ? RATING_META[s.pb_rating].label : "",
+        s.history_rating ? RATING_META[s.history_rating].label : "",
+        s.price_cheap     != null ? Number(s.price_cheap).toFixed(2)     : "",
+        s.price_fair      != null ? Number(s.price_fair).toFixed(2)      : "",
+        s.price_expensive != null ? Number(s.price_expensive).toFixed(2) : "",
       ];
     });
     const csv = "﻿" + [header, ...rows].map(r => r.join(",")).join("\n");
@@ -209,7 +218,8 @@ export default function DashboardPage() {
           僅顯示三大法人買超
         </label>
 
-        <RatingFilter value={ratings} onToggle={toggleRating} />
+        <RatingFilter label="PB・同產業" value={ratings} onToggle={toggleRating} />
+        <RatingFilter label="PB・自身歷史" value={histRatings} onToggle={toggleHistRating} />
         <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:8 }}>
           <span style={{ fontSize:13, color:"#5a7ca8" }}>符合條件</span>
           <span style={{ fontSize:20, fontWeight:800, color:"var(--accent)", fontFamily:"var(--font-mono)", lineHeight:1 }}>
@@ -277,11 +287,12 @@ const COLS = [
   { key:"pb_ratio",            label:"PB",        sub:"倍", align:"right"  as const, width:76,  group:5, sortable:true  },
   { key:"bvps",                label:"每股淨值",  sub:"元", align:"right"  as const, width:92,  group:5, sortable:true  },
   { key:"pb_rating",           label:"評級",      sub:"同產業", align:"left" as const, width:200, group:5, sortable:true },
+  { key:"history_rating",      label:"評級",      sub:"自身歷史", align:"left" as const, width:104, group:5, sortable:true },
   { key:"watchlist",           label:"",          sub:"",   align:"center" as const, width:52,  group:4, sortable:false },
 ];
 
 // 每個 group 的左邊起始欄加粗分隔線
-const GROUP_START = new Set([3, 5, 9, 11, 14]); // close, conc_ratio, foreign_net, pb_ratio, watchlist
+const GROUP_START = new Set([3, 5, 9, 11, 15]); // close, conc_ratio, foreign_net, pb_ratio, watchlist
 
 // ── Table ────────────────────────────────────────────────
 function ResizableTable({ items, onRowClick, onToggleWl, onIndustryClick, sort, onSort }: {
@@ -493,6 +504,11 @@ function ResizableTable({ items, onRowClick, onToggleWl, onIndustryClick, sort, 
                 <ValuationTags v={s} />
               </td>
 
+              {/* 評級（自身歷史） */}
+              <td onClick={() => onRowClick(s.code)} style={tdc("left", true)}>
+                <RatingBadge v={s} basis="history" />
+              </td>
+
               {/* 關注 — group start */}
               <td style={{ ...tdc("center", false), borderLeft:"2px solid rgba(0,150,255,.18)" }}>
                 <button
@@ -625,11 +641,13 @@ function Slider({ label, suffix, value, min, max, step, onChange }: {
 }
 
 // ── 股價淨值比評級篩選（可複選，全不選 = 全部）──────────────
-function RatingFilter({ value, onToggle }: { value: Set<PbRating>; onToggle: (r: PbRating) => void }) {
+function RatingFilter({ label, value, onToggle }: {
+  label: string; value: Set<PbRating>; onToggle: (r: PbRating) => void;
+}) {
   return (
     <div>
       <div style={{ fontSize:10.5, letterSpacing:".1em", color:"#3d5a7a", marginBottom:5, fontWeight:600 }}>
-        股價淨值比
+        {label}
       </div>
       <div style={{ display:"flex", gap:6 }}>
         {RATING_ORDER.map(r => {

@@ -86,6 +86,18 @@ class ValuationFields(BaseModel):
     industry_pb_pct:    Optional[float] = None      # 同產業 PB 排名百分位（0 最低、1 最高）
     industry_pb_median: Optional[float] = None      # 同產業 PB 中位數
     industry_n:         Optional[int] = None        # 同產業有 PB 的檔數
+    # 跟自己的歷史比（過去 5 年每月一筆，不含本月）
+    history_rating:     Optional[str] = None        # cheap / fair / expensive / None
+    history_pb_pct:     Optional[float] = None      # 目前 PB 在自己歷史中的位置（0 最低、1 最高）
+    history_n:          Optional[int] = None        # 歷史有幾個月
+    history_since:      Optional[date] = None       # 歷史從哪一天開始
+    history_pb_p25:     Optional[float] = None
+    history_pb_p50:     Optional[float] = None
+    history_pb_p75:     Optional[float] = None
+    # 參考價位 = 每股淨值 × 歷史 PB 第 25／50／75 百分位
+    price_cheap:        Optional[float] = None
+    price_fair:         Optional[float] = None
+    price_expensive:    Optional[float] = None
 
 
 class ScreenItem(ValuationFields):
@@ -155,6 +167,20 @@ class IndustryValuation(BaseModel):
     min:       Optional[float] = None
     max:       Optional[float] = None
     items:     list[IndustryValuationItem]  # 依 PB 由低到高，沒有 PB 的排最後
+
+
+class PbPoint(BaseModel):
+    date: date
+    pb:   float
+
+
+class PbHistory(BaseModel):
+    code:   str
+    points: list[PbPoint]                  # 每月一點，最後一點是最新一天
+    p25:    Optional[float] = None
+    p50:    Optional[float] = None
+    p75:    Optional[float] = None
+    n:      int = 0                        # 用來算百分位的月數（不含本月）
 
 
 # ── Watchlist ─────────────────────────────────────────────────

@@ -209,6 +209,14 @@ docker compose -f docker-compose.prod.yml exec api \
 
 輸出最後看到 `✅ 回補完成` 即成功。
 
+「跟自己歷史比」的股價淨值比評級需要過去 5 年每月一筆的 PB，也要回補一次
+（約 5 分鐘；可以重複執行，已經補過的月份會跳過）：
+
+```bash
+docker compose -f docker-compose.prod.yml exec scheduler \
+    python scripts/backfill_valuation.py
+```
+
 ---
 
 ## 五、驗收

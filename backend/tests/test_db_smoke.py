@@ -31,7 +31,8 @@ async def test_migrated_schema_has_all_tables(db_session):
 
     assert set(rows) == {
         "stocks", "daily_quotes", "institutional_flow", "chip_concentration",
-        "users", "watchlist", "ownership_ratios", "valuations", "alembic_version",
+        "users", "watchlist", "ownership_ratios", "valuations", "valuation_monthly",
+        "alembic_version",
     }
 
 

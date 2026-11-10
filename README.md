@@ -45,7 +45,7 @@ I wanted one tool that pulls all the sources automatically, scores every listed 
 - **Alembic migrations**: schema changes are versioned; `deploy.sh` runs `alembic upgrade head` before the API starts
 - **Tests against a real database**: each test runs inside a transaction that gets rolled back, so tests can call `commit()` normally without leaking into one another. CI spins up a PostgreSQL service and verifies the migrated schema matches the models before running pytest
 - **Daily backups**: `pg_dump` on a cron schedule, with a restore drill script to prove the dumps actually restore
-- **Price-to-book rating**: every stock gets 便宜 / 普通 / 昂貴 by ranking its P/B against the rest of its industry (listed + OTC), recalculated each day. Clicking an industry opens a side-by-side P/B chart for that industry
+- **Price-to-book rating**: every stock gets 便宜 / 普通 / 昂貴 twice — once against the rest of its industry (listed + OTC), once against its own monthly P/B over the past 5 years. Clicking an industry opens a side-by-side P/B chart; the stock page shows the 5-year P/B trend and the prices those ranges translate to
 - **CSV export**: downloads the filtered result as UTF-8 BOM CSV, so Excel opens it without re-encoding
 
 ---
@@ -270,6 +270,7 @@ All public — no paid API needed.
 - [x] Account approval workflow, admin panel, login required on every data endpoint
 - [x] Institutional flow bar chart on the stock page — view 外資 / 投信 / 自營 / total separately or side by side
 - [x] Price-to-book rating within each industry, with an industry comparison panel
+- [x] Price-to-book rating against the stock's own 5-year history, with reference prices
 
 ### Next
 

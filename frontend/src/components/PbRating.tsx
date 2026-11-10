@@ -12,38 +12,56 @@ export const RATING_ORDER: PbRating[] = ["cheap", "fair", "expensive"];
 export const num = (v: number | string | null | undefined): number | null =>
   v == null || v === "" ? null : Number(v);
 
+export type RatingBasis = "industry" | "history";
+
 /** 不評級的原因，給滑鼠提示用 */
-function unratedReason(v: ValuationFields): string {
+function unratedReason(v: ValuationFields, basis: RatingBasis): string {
   if (!v.valuation_date) return "還沒有估值資料";
   if (v.pb_ratio == null) return "淨值為負或交易所未提供 PB";
+  if (basis === "history") {
+    return v.history_n ? `歷史只有 ${v.history_n} 個月，滿 36 個月才評級` : "還沒有歷史資料";
+  }
   if ((v.industry_n ?? 0) < 10) return `同產業只有 ${v.industry_n ?? 0} 檔，樣本太少不評級`;
   return "不評級";
 }
 
-/** 評級的說明文字：同產業 n 檔中排第幾 */
-export function ratingTitle(v: ValuationFields): string {
-  if (!v.pb_rating) return unratedReason(v);
-  const pct = num(v.industry_pb_pct);
+const pctText = (p: number | null) => (p != null ? `${Math.round(p * 100)}%` : "—");
+const fix2 = (v: number | null | undefined) => (v == null ? "—" : Number(v).toFixed(2));
+
+/** 評級的說明文字 */
+export function ratingTitle(v: ValuationFields, basis: RatingBasis = "industry"): string {
+  if (basis === "history") {
+    if (!v.history_rating) return unratedReason(v, basis);
+    return [
+      `跟自己過去 ${v.history_n} 個月比，目前 PB 由低到高排在 ${pctText(num(v.history_pb_pct))} 的位置`,
+      `歷史 PB：低檔 ${fix2(v.history_pb_p25)}／中位數 ${fix2(v.history_pb_p50)}／高檔 ${fix2(v.history_pb_p75)}`,
+      "最低的 25% 為便宜、最高的 25% 為昂貴",
+    ].join("\n");
+  }
+  if (!v.pb_rating) return unratedReason(v, basis);
   const median = num(v.industry_pb_median);
   return [
-    `同產業 ${v.industry_n} 檔，PB 由低到高排在 ${pct != null ? Math.round(pct * 100) : "—"}% 的位置`,
+    `同產業 ${v.industry_n} 檔，PB 由低到高排在 ${pctText(num(v.industry_pb_pct))} 的位置`,
     median != null ? `產業中位數 ${median.toFixed(2)}` : "",
     "最低的 25% 為便宜、最高的 25% 為昂貴",
   ].filter(Boolean).join("\n");
 }
 
-export function RatingBadge({ v, size = "md" }: { v: ValuationFields; size?: "md" | "lg" }) {
+export function RatingBadge({ v, size = "md", basis = "industry" }: {
+  v: ValuationFields; size?: "md" | "lg"; basis?: RatingBasis;
+}) {
   const big = size === "lg";
-  if (!v.pb_rating) {
+  const rating = basis === "history" ? v.history_rating : v.pb_rating;
+  if (!rating) {
     return (
-      <span title={unratedReason(v)} style={{ fontSize: big ? 14 : 11.5, color: "#3d5a7a", cursor: "help" }}>
+      <span title={unratedReason(v, basis)} style={{ fontSize: big ? 14 : 11.5, color: "#3d5a7a", cursor: "help" }}>
         {v.pb_ratio == null ? "—" : "不評級"}
       </span>
     );
   }
-  const m = RATING_META[v.pb_rating];
+  const m = RATING_META[rating];
   return (
-    <span title={ratingTitle(v)} style={{
+    <span title={ratingTitle(v, basis)} style={{
       display: "inline-block", padding: big ? "4px 12px" : "2px 9px", borderRadius: 6,
       background: m.bg, color: m.color, border: `1px solid ${m.border}`,
       fontSize: big ? 15 : 12.5, fontWeight: 700, letterSpacing: ".04em", cursor: "help",

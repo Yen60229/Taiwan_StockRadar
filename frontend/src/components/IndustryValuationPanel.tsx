@@ -66,7 +66,7 @@ export default function IndustryValuationPanel({
       <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 40 }} />
       <aside style={{
         position: "fixed", top: 0, right: 0, bottom: 0, zIndex: 50,
-        width: "min(680px, 100vw)", overflowY: "auto",
+        width: "min(820px, 100vw)", overflowY: "auto",
         background: "#07101e", borderLeft: "1px solid rgba(0,150,255,.2)",
         boxShadow: "-12px 0 40px rgba(0,0,0,.6)", padding: "20px 22px 28px",
       }}>
@@ -136,11 +136,12 @@ export default function IndustryValuationPanel({
 
         {/* 明細表 */}
         {rows.length > 0 && (
+          <div style={{ overflowX: "auto" }}>
           <table style={{ fontSize: 12.5 }}>
             <thead>
               <tr style={{ color: "#5a8ab8", textAlign: "right" }}>
                 <Th align="left">代號</Th><Th align="left">名稱</Th><Th>收盤</Th><Th>每股淨值</Th>
-                <Th>PB</Th><Th>本益比</Th><Th>名次</Th><Th align="center">評級</Th>
+                <Th>PB</Th><Th>本益比</Th><Th>名次</Th><Th align="center">同產業</Th><Th align="center">自身歷史</Th>
               </tr>
             </thead>
             <tbody>
@@ -148,6 +149,7 @@ export default function IndustryValuationPanel({
                                     active={r.code === highlight} onClick={() => onOpenStock(r.code)} />)}
             </tbody>
           </table>
+          </div>
         )}
 
         <Note>
@@ -179,6 +181,7 @@ function Row({ r, rank, n, active, onClick }: {
       <Td><span className="mono">{fmt(num(r.pe_ratio))}</span></Td>
       <Td><span className="mono" style={{ color: "#5a7ca8" }}>{rank ? `${rank}/${n}` : "—"}</span></Td>
       <Td align="center"><RatingBadge v={r} /><ValuationTags v={r} /></Td>
+      <Td align="center"><RatingBadge v={r} basis="history" /></Td>
     </tr>
   );
 }

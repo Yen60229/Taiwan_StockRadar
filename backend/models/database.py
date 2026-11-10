@@ -211,6 +211,25 @@ class Valuation(Base):
     )
 
 
+# ── 每月 PB 快照（「跟自己歷史比」用） ────────────────────────
+# 每檔每月只留一筆：該月最新一天的 PB。由 upsert_valuations 寫 valuations 時一併更新。
+# 跟自己歷史比只需要每月一點；若直接從 valuations 挑，那張表每天多約 2,000 筆，
+# 5 年後約 250 萬筆，每次查詢都要掃描排序幾十萬筆。這張表固定是「檔數 × 月數」。
+class ValuationMonthly(Base):
+    __tablename__ = "valuation_monthly"
+
+    id         = Column(BigInteger,    primary_key=True, autoincrement=True)
+    stock_code = Column(String(10),    nullable=False)
+    month      = Column(Date,          nullable=False)   # 該月一日
+    trade_date = Column(Date,          nullable=False)   # 這筆 PB 實際的日期（該月最新一天）
+    pb_ratio   = Column(Numeric(8, 2), nullable=False)
+
+    __table_args__ = (
+        # 每檔取一段月份走這個唯一索引（stock_code 開頭）
+        UniqueConstraint("stock_code", "month", name="uq_valuation_monthly"),
+    )
+
+
 # 注意：這裡刻意沒有 init_db() / create_all()。
 # 唯一的建表路徑是 Alembic（見 migrations/、scripts/alembic_utils.py）：
 #   dev  → docker-compose.yml 的 api command 先跑 `alembic upgrade head`

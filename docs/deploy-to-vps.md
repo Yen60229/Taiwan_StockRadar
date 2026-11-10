@@ -156,6 +156,14 @@ docker compose -f docker-compose.prod.yml exec api \
 
 Takes about 20–30 minutes. You'll see `✅ Done` at the end.
 
+The P/B rating against a stock's own history needs 5 years of monthly P/B. Run this once too
+(about 5 minutes; safe to re-run, months already filled are skipped):
+
+```bash
+docker compose -f docker-compose.prod.yml exec scheduler \
+    python scripts/backfill_valuation.py
+```
+
 ---
 
 ## 7. Verify

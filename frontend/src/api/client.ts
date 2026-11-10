@@ -95,6 +95,27 @@ export interface ValuationFields {
   industry_pb_pct?: number | null; // 同產業排名百分位，0 最低、1 最高
   industry_pb_median?: number | null;
   industry_n?: number | null;
+  // 跟自己的歷史比（過去 5 年每月一筆，不含本月）
+  history_rating?: PbRating | null;
+  history_pb_pct?: number | null;  // 目前 PB 在自己歷史中的位置，0 最低、1 最高
+  history_n?: number | null;       // 歷史月數
+  history_since?: string | null;
+  history_pb_p25?: number | null;
+  history_pb_p50?: number | null;
+  history_pb_p75?: number | null;
+  // 參考價位 = 每股淨值 × 歷史 PB 第 25／50／75 百分位
+  price_cheap?: number | null;
+  price_fair?: number | null;
+  price_expensive?: number | null;
+}
+
+export interface PbHistory {
+  code: string;
+  points: { date: string; pb: number }[];  // 每月一點，最後一點是最新一天
+  p25?: number | null;
+  p50?: number | null;
+  p75?: number | null;
+  n: number;
 }
 
 export interface IndustryValuationItem extends ValuationFields {
@@ -205,6 +226,8 @@ export const stockApi = {
 export const valuationApi = {
   industry: (industry: string) =>
     api.get<IndustryValuation>("/valuation/industry", { params: { industry } }).then((r) => r.data),
+  history: (code: string) =>
+    api.get<PbHistory>(`/valuation/history/${code}`).then((r) => r.data),
 };
 
 export const watchlistApi = {
