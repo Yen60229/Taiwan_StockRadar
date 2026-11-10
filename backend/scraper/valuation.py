@@ -60,6 +60,12 @@ _FIELD_KEYS = {
     "財報年/季":  "fin_period",
 }
 
+# 只有「財報年/季」可以缺：2024 年以前的上櫃估值表沒有這一欄（回補歷史時實測發現），
+# 缺了只是少顯示一個季別標籤。其餘欄位仍然缺一不可——尤其本益比，它空白代表
+# 「虧損中」，交易所若改了欄名、我們卻默默讀成空值，會變成全市場都顯示虧損中，
+# 這種無聲的錯比整份拒收更糟。
+_OPTIONAL_KEYS = {"fin_period"}
+
 
 # ── 格式統一 ──────────────────────────────────────────────────
 def to_number(v) -> Optional[float]:
@@ -79,7 +85,7 @@ def normalize_fin_period(v) -> Optional[str]:
 def _column_index(fields: list[str]) -> dict[str, int]:
     """把回應的欄位名稱對到統一鍵；缺任何一欄就回空 dict，讓呼叫端放棄整份資料"""
     idx = {_FIELD_KEYS[f]: i for i, f in enumerate(fields) if f in _FIELD_KEYS}
-    missing = set(_FIELD_KEYS.values()) - idx.keys()
+    missing = set(_FIELD_KEYS.values()) - _OPTIONAL_KEYS - idx.keys()
     if missing:
         logger.error(f"[Valuation] 回應缺少欄位 {sorted(missing)}，實際欄位：{fields}")
         return {}
@@ -104,7 +110,8 @@ def _rows_to_frame(rows: list, fields: list[str], target: date, code_re: re.Patt
             # PB ≤ 0 沒有意義（淨值為負時交易所會留空，這裡多一道保險）
             "pb_ratio":       pb if pb and pb > 0 else None,
             "dividend_yield": to_number(row[idx["dividend_yield"]]),
-            "fin_period":     normalize_fin_period(row[idx["fin_period"]]),
+            "fin_period":     (normalize_fin_period(row[idx["fin_period"]])
+                               if "fin_period" in idx else None),
         })
     return pd.DataFrame(records, columns=VALUATION_COLUMNS)
 

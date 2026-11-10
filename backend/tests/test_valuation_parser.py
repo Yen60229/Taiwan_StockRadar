@@ -96,6 +96,44 @@ def test_twse_missing_field_returns_empty(fx):
     assert parse_twse_payload(payload, DAY).empty
 
 
+def test_tpex_old_payload_without_fin_period_still_parses(fx):
+    """
+    回歸測試（第二階段回補歷史時實測發現）：2024 年以前的上櫃估值表沒有
+    「財報年/季」欄。舊版規定六欄缺一不可，整份被當成壞資料丟掉，
+    上櫃的歷史 PB 一筆都收不進來。只有季別可以缺（缺了只是少一個標籤）；
+    代號和 PB 仍然必備，見 test_tpex_missing_pb_returns_empty。
+    """
+    payload = fx.json("tpex_pe_20261106.json")
+    table = payload["tables"][0]
+    drop = table["fields"].index("財報年/季")
+    table["fields"] = [f for i, f in enumerate(table["fields"]) if i != drop]
+    table["data"] = [[v for i, v in enumerate(row) if i != drop] for row in table["data"]]
+
+    df = parse_tpex_payload(payload, DAY)
+
+    assert len(df) == 15
+    assert df["fin_period"].isna().all()
+    assert _row(df, "1240")["pb_ratio"] == pytest.approx(1.57)
+
+
+def test_tpex_missing_pb_returns_empty(fx):
+    """PB 欄被改名時仍然整份不收：不能默默把每一檔讀成沒有 PB"""
+    payload = fx.json("tpex_pe_20261106.json")
+    table = payload["tables"][0]
+    table["fields"] = [f.replace("股價淨值比", "淨值比") for f in table["fields"]]
+    assert parse_tpex_payload(payload, DAY).empty
+
+
+def test_missing_pe_still_rejects_the_whole_payload(fx):
+    """
+    本益比不能比照季別放寬：本益比空白就是「虧損中」標籤的依據，
+    交易所改欄名時若默默讀成空值，會變成全市場都顯示虧損中。
+    """
+    payload = fx.json("twse_bwibbu_20261106.json")
+    payload["fields"] = [f.replace("本益比", "PE") for f in payload["fields"]]
+    assert parse_twse_payload(payload, DAY).empty
+
+
 # ── 上櫃 ──────────────────────────────────────────────────────
 def test_tpex_parses_real_payload(fx):
     df = parse_tpex_payload(fx.json("tpex_pe_20261106.json"), DAY)

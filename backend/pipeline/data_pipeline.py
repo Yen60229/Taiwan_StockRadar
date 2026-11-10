@@ -296,10 +296,16 @@ async def upsert_institutional_flow(
 
 
 # ── 5b. Upsert 估值（本益比 / 殖利率 / 股價淨值比） ───────────
-async def upsert_valuations(session: AsyncSession, rows: list[dict]) -> int:
+async def upsert_valuations(
+    session: AsyncSession, rows: list[dict], *, keep_existing: bool = False,
+) -> int:
     """
     一次送出整批（executemany），不逐筆往返資料庫：每天約 2,000 筆，
     逐筆 execute 會多出 2,000 次來回。
+
+    keep_existing=True：該 (代號, 日期) 已經有資料就不動它（ON CONFLICT DO NOTHING）。
+    回補歷史用這個。每日排程寫入的列有 bvps（靠當天收盤價推算），歷史列沒有收盤價
+    所以 bvps 是空的——若重跑回補時用預設的「衝突就覆蓋」，會把已經算好的每股淨值蓋成空值。
     """
     if not rows:
         return 0
@@ -316,19 +322,22 @@ async def upsert_valuations(session: AsyncSession, rows: list[dict]) -> int:
         }
         for r in rows
     ]
+    on_conflict = (
+        "DO NOTHING" if keep_existing else """DO UPDATE SET
+                pe_ratio       = EXCLUDED.pe_ratio,
+                pb_ratio       = EXCLUDED.pb_ratio,
+                dividend_yield = EXCLUDED.dividend_yield,
+                bvps           = EXCLUDED.bvps,
+                fin_period     = EXCLUDED.fin_period"""
+    )
     await session.execute(
-        text("""
+        text(f"""
             INSERT INTO valuations
                 (stock_code, trade_date, pe_ratio, pb_ratio, dividend_yield, bvps, fin_period)
             VALUES
                 (:code, :date, :pe, :pb, :yld, :bvps, :period)
             ON CONFLICT (stock_code, trade_date)
-            DO UPDATE SET
-                pe_ratio       = EXCLUDED.pe_ratio,
-                pb_ratio       = EXCLUDED.pb_ratio,
-                dividend_yield = EXCLUDED.dividend_yield,
-                bvps           = EXCLUDED.bvps,
-                fin_period     = EXCLUDED.fin_period
+            {on_conflict}
         """),
         params,
     )
